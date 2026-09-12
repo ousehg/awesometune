@@ -607,7 +607,7 @@
     </div>
     <p class="help">
       数字上方的点是高音点（高八度），下方的点是低音点（低八度）；音名唱名不变，发声时按实际八度播放。<br>
-      念唱名：点"开始识别"后从左到右念出唱名（或音名、数字），第几个念的就对第几个数字，念满一组自动判分；没念满时停顿超过设定秒数才判分，中间可以慢慢想，也可以点"念完了"立刻判分。识别用手机自带的语音识别，中文会把 do re mi 听成"多来米"之类的同音字，都能匹配。需要 https 地址和麦克风。<br>
+      念唱名：点"开始识别"后从左到右念出唱名（或音名、数字），第几个念的就对第几个数字，最后一个音后面多念一个"完"字当缓冲（不参与判分），免得句尾被识别器吞掉；念满一组自动判分；没念满时停顿超过设定秒数才判分，中间可以慢慢想，也可以点"念完了"立刻判分。识别用手机自带的语音识别，中文会把 do re mi 听成"多来米"之类的同音字，都能匹配。需要 https 地址和麦克风。<br>
       视唱识音：点"开始视唱"后每组先播一个 do 作参考，接着把这组音依次唱出来（每个音之间稍微断开），app 检测音高并逐个判分。默认只比对音级，不分八度；选"严格八度"时高低音点也要唱准。"调高自动对齐"时不要求你的 do 和参考音一样高，只看音与音之间的关系，小结会显示你实际唱的 do 在哪。唱到全对或停顿 1.2 秒后判分。<br>
       我的音阶：点"录入我的音阶"，依次唱 do 到 si 各保持一秒。之后判分只看你唱的音离你自己录的哪个音最近，不再要求唱准标准音高。对照表里会列出你每个音相对标准音程的偏差（音分）。需要 https 地址和麦克风权限，claude.ai 的预览框里用不了。<br>
       唱读自评：看到一组数字就出声念，念完点"念完了"，答案会揭开；把自己念错的数字点一下标红，再点"下一组"。计时是从出题到念完的时间。<br>
@@ -1353,7 +1353,11 @@
     timer: null, restartTimer: null, lastText: '', maxIdx: 0,
   };
   function speechStatus(msg, err) { const el = $('speech-tip'); el.textContent = msg; el.classList.toggle('err', !!err); }
-  function speechLabel(on) { $('speech-btn').classList.toggle('live', !!on); $('speech-label').textContent = on ? '正在听 · 点击停止' : '开始识别'; }
+  function speechLabel(on) {
+    const b = $('speech-btn');
+    b.classList.toggle('live', !!on && speech.active);
+    $('speech-label').textContent = !on ? '开始识别' : speech.active ? '正在听 · 点击停止' : '连接中…稍等';
+  }
   function bestAlternative(result) {
     let best = '', bestN = -1;
     for (let i = 0; i < result.length; i++) {
@@ -1369,7 +1373,7 @@
     r.continuous = true;
     r.interimResults = true;
     r.maxAlternatives = 5;
-    r.onstart = () => { speech.active = true; speechLabel(true); if (!speechTokens().length) { state.startT = performance.now(); speechStatus('正在听…从左到右念'); } };
+    r.onstart = () => { speech.active = true; speechLabel(true); if (!speechTokens().length) { state.startT = performance.now(); speechStatus('正在听…从左到右念，最后一个后面多念个"完"'); } };
     r.onresult = (ev) => {
       const list = [];
       for (let i = 0; i < ev.results.length; i++) list.push({ text: bestAlternative(ev.results[i]), isFinal: ev.results[i].isFinal });
@@ -1391,8 +1395,8 @@
         if (finals.length) { speech.carried = speech.carried.concat(parseTokens(finals.join(' '))); speech.carriedText += finals.join(' ') + ' '; }
       }
       speech.results = []; speech.startIndex = 0;
-      if (speech.want) { clearTimeout(speech.restartTimer); speech.restartTimer = setTimeout(startSpeechEngine, 150); }
-      else speechLabel(false);
+      speechLabel(speech.want);
+      if (speech.want) { clearTimeout(speech.restartTimer); startSpeechEngine(); }
       if (speech.want && !state.locked && state.input === 'speech') onSpeechResult();
     };
     return r;
@@ -1403,7 +1407,7 @@
     speech.rec.lang = state.lang;
     try { speech.rec.start(); } catch (e) {
       clearTimeout(speech.restartTimer);
-      speech.restartTimer = setTimeout(() => { if (speech.want && !speech.active) startSpeechEngine(); }, 400);
+      speech.restartTimer = setTimeout(() => { if (speech.want && !speech.active) startSpeechEngine(); }, 250);
     }
   }
   function stopSpeechEngine() { try { if (speech.rec) speech.rec.abort(); } catch (e) { /* ignore */ } }
@@ -1433,7 +1437,7 @@
     speech.lastText = '';
     speech.maxIdx = 0;
     $('heard').textContent = '…';
-    if (speech.want) speechStatus(speech.active ? '正在听…从左到右念' : '正在连接麦克风…');
+    if (speech.want) speechStatus(speech.active ? '正在听…从左到右念，最后一个后面多念个"完"' : '连接中…按钮变红再念');
     else speechStatus('点"开始识别"，允许麦克风，然后从左到右念出每个数字的唱名');
   }
   function onSpeechResult() {
