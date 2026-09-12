@@ -430,6 +430,7 @@
           <button type="button" data-input="tap" aria-pressed="true">点按 / 键盘</button>
           <button type="button" data-input="oral" aria-pressed="false">唱读自评</button>
           <button type="button" data-input="speech" aria-pressed="false">念唱名</button>
+          <button type="button" data-input="dtw" aria-pressed="false">念唱名（自训练）</button>
           <button type="button" data-input="sing" aria-pressed="false">视唱识音</button>
         </div>
       </div>
@@ -441,6 +442,19 @@
         </div>
         <span class="lbl" id="lbl-pause" style="margin-left:6px">停顿判分</span>
         <div class="seg" role="group" aria-labelledby="lbl-pause" id="pause-seg">
+          <button type="button" data-pause="3" aria-pressed="false">3秒</button>
+          <button type="button" data-pause="5" aria-pressed="true">5秒</button>
+          <button type="button" data-pause="8" aria-pressed="false">8秒</button>
+          <button type="button" data-pause="0" aria-pressed="false">只手动</button>
+        </div>
+      </div>
+      <div class="field only-speech" id="dtw-fields" hidden>
+        <span class="lbl">我的读音</span>
+        <button type="button" class="toggle" id="dtw-train-btn">录入我的读音</button>
+        <span class="profile-status" id="dtw-status">未录入</span>
+        <button type="button" class="toggle" id="dtw-clear" hidden>清除</button>
+        <span class="lbl" id="lbl-pause2" style="margin-left:6px">停顿判分</span>
+        <div class="seg" role="group" aria-labelledby="lbl-pause2" id="pause-seg2">
           <button type="button" data-pause="3" aria-pressed="false">3秒</button>
           <button type="button" data-pause="5" aria-pressed="true">5秒</button>
           <button type="button" data-pause="8" aria-pressed="false">8秒</button>
@@ -549,6 +563,25 @@
       <div class="heard"><span class="lbl">听到</span><span class="txt"><bdi id="heard">…</bdi></span></div>
       <div class="sing-tip" id="speech-tip">点"开始识别"，允许麦克风，然后从左到右念出每个数字的唱名</div>
     </div>
+    <div class="speech" id="dtw" hidden>
+      <div class="sing-row">
+        <button type="button" class="big-btn" id="dtw-btn"><span class="ring"></span><span id="dtw-label">开始识别</span></button>
+        <button type="button" class="ghost" id="dtw-done">念完了</button>
+        <button type="button" class="ghost" id="dtw-skip">换一组</button>
+      </div>
+      <div class="heard"><span class="lbl">听到</span><span class="txt"><bdi id="dtw-heard">…</bdi></span></div>
+      <div class="sing-tip" id="dtw-tip">先在设置里"录入我的读音"，然后点"开始识别"，一个一个念，音节之间稍微断开</div>
+    </div>
+    <div class="calib" id="train">
+      <div class="t" id="train-step">录入我的读音 · do · 第 1 / 4 遍</div>
+      <div class="syl" id="train-syl">do<b>1</b></div>
+      <div class="dots" id="train-dots"></div>
+      <div class="msg" id="train-msg">念一遍这个唱名</div>
+      <div class="row">
+        <button type="button" id="train-back">重录这个</button>
+        <button type="button" id="train-cancel">取消</button>
+      </div>
+    </div>
     <div class="sing" id="sing" hidden>
       <div class="sing-row">
         <button type="button" class="big-btn" id="sing-btn"><span class="ring"></span><span id="sing-label">开始视唱</span></button>
@@ -608,6 +641,7 @@
     <p class="help">
       数字上方的点是高音点（高八度），下方的点是低音点（低八度）；音名唱名不变，发声时按实际八度播放。<br>
       念唱名：点"开始识别"后从左到右念出唱名（或音名、数字），第几个念的就对第几个数字，最后一个音后面多念一个"完"字当缓冲（不参与判分），免得句尾被识别器吞掉；念满一组自动判分；没念满时停顿超过设定秒数才判分，中间可以慢慢想，也可以点"念完了"立刻判分。识别用手机自带的语音识别，中文会把 do re mi 听成"多来米"之类的同音字，都能匹配。需要 https 地址和麦克风。<br>
+      念唱名（自训练）：先"录入我的读音"，do 到 si 各念 4 遍；之后只认这七个音节、只认你的声音，用你自己的录音做模板比对（MFCC + DTW），不依赖手机的语音识别。念的时候每个音节之间稍微断开。<br>
       视唱识音：点"开始视唱"后每组先播一个 do 作参考，接着把这组音依次唱出来（每个音之间稍微断开），app 检测音高并逐个判分。默认只比对音级，不分八度；选"严格八度"时高低音点也要唱准。"调高自动对齐"时不要求你的 do 和参考音一样高，只看音与音之间的关系，小结会显示你实际唱的 do 在哪。唱到全对或停顿 1.2 秒后判分。<br>
       我的音阶：点"录入我的音阶"，依次唱 do 到 si 各保持一秒。之后判分只看你唱的音离你自己录的哪个音最近，不再要求唱准标准音高。对照表里会列出你每个音相对标准音程的偏差（音分）。需要 https 地址和麦克风权限，claude.ai 的预览框里用不了。<br>
       唱读自评：看到一组数字就出声念，念完点"念完了"，答案会揭开；把自己念错的数字点一下标红，再点"下一组"。计时是从出题到念完的时间。<br>
@@ -645,6 +679,7 @@
     nextDelay: 'slow',
     lang: 'zh-CN',
     speechPause: 5,
+    dtwTemplates: null,
     tab: 'read',
     pt: { type: 'imitate', tol: 35, oct: 0 },
     phase: 'reading',
@@ -676,6 +711,7 @@
       if (['fast', 'slow', 'manual'].includes(s.nextDelay)) state.nextDelay = s.nextDelay;
       if (s.lang === 'zh-CN' || s.lang === 'en-US') state.lang = s.lang;
       if ([0, 3, 5, 8].includes(s.speechPause)) state.speechPause = s.speechPause;
+      if (Array.isArray(s.dtwTemplates) && s.dtwTemplates.length >= 7) state.dtwTemplates = s.dtwTemplates;
       if (s.tab === 'read' || s.tab === 'pitch') state.tab = s.tab;
       if (s.pt) {
         if (['imitate', 'interval', 'scale'].includes(s.pt.type)) state.pt.type = s.pt.type;
@@ -690,7 +726,7 @@
       localStorage.setItem(STORE, JSON.stringify({
         best: state.best, mode: state.mode, dots: state.dots,
         key: state.key, len: state.len, sound: state.sound, timbre: state.timbre, input: state.input,
-        refOct: state.refOct, strictOct: state.strictOct, refTone: state.refTone, autoKey: state.autoKey, profile: state.profile, nextDelay: state.nextDelay, lang: state.lang, speechPause: state.speechPause, tab: state.tab, pt: state.pt,
+        refOct: state.refOct, strictOct: state.strictOct, refTone: state.refTone, autoKey: state.autoKey, profile: state.profile, nextDelay: state.nextDelay, lang: state.lang, speechPause: state.speechPause, dtwTemplates: state.dtwTemplates, tab: state.tab, pt: state.pt,
       }));
     } catch (e) { /* ignore */ }
   }
@@ -1714,7 +1750,278 @@
     document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tab === tab)));
     document.querySelectorAll('[data-panel]').forEach((el) => { el.hidden = el.dataset.panel !== tab; });
     if (tab !== 'pitch' && pt.on) ptStop();
-    if (tab !== 'read') { if (sing.want) singStop(); if (speech.want) { speech.want = false; stopSpeechEngine(); speechLabel(false); } }
+    if (tab !== 'read') { if (sing.want) singStop(); if (dtw.on) dtwStop(); if (speech.want) { speech.want = false; stopSpeechEngine(); speechLabel(false); } }
+  }
+
+  // ---------- self-trained syllable recogniser: MFCC features + DTW against the user's own recordings ----------
+  const dtw = {
+    on: false, proc: null, sink: null, sr: 48000, frameLen: 1024, hop: 480,
+    buf: null, bufLen: 0, hann: null, fbank: null, fftRe: null, fftIm: null, cosTab: null, sinTab: null, rev: null,
+    floor: -50, inSeg: false, seg: [], pre: [], loud: 0, quiet: 0,
+    notes: [], heard: [], timer: null, listening: false,
+    train: null,   // { deg, take, per, done: [] }
+    templates: [],
+  };
+  const DTW_TAKES = 4;
+  function dtwSetup() {
+    dtw.sr = ctx.sampleRate;
+    dtw.frameLen = 1024;
+    dtw.hop = Math.round(dtw.sr * 0.01);
+    const N = dtw.frameLen;
+    dtw.hann = new Float32Array(N);
+    for (let i = 0; i < N; i++) dtw.hann[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N);
+    dtw.fftRe = new Float32Array(N); dtw.fftIm = new Float32Array(N);
+    dtw.cosTab = new Float32Array(N / 2); dtw.sinTab = new Float32Array(N / 2);
+    for (let i = 0; i < N / 2; i++) { dtw.cosTab[i] = Math.cos((2 * Math.PI * i) / N); dtw.sinTab[i] = -Math.sin((2 * Math.PI * i) / N); }
+    dtw.rev = new Uint16Array(N);
+    const bits = Math.log2(N);
+    for (let i = 0; i < N; i++) { let r = 0; for (let b = 0; b < bits; b++) r = (r << 1) | ((i >> b) & 1); dtw.rev[i] = r; }
+    // mel filterbank, 26 bands between 100 Hz and 6500 Hz
+    const mel = (f) => 2595 * Math.log10(1 + f / 700), imel = (m) => 700 * (Math.pow(10, m / 2595) - 1);
+    const nb = 26, lo = mel(100), hi = mel(Math.min(6500, dtw.sr / 2));
+    const pts = [];
+    for (let i = 0; i < nb + 2; i++) pts.push(Math.floor(((N + 1) * imel(lo + ((hi - lo) * i) / (nb + 1))) / dtw.sr));
+    dtw.fbank = [];
+    for (let b = 0; b < nb; b++) {
+      const a = pts[b], c = pts[b + 1], d = pts[b + 2];
+      const w = new Float32Array(Math.max(1, d - a));
+      for (let k = a; k < d; k++) w[k - a] = k < c ? (k - a) / Math.max(1, c - a) : (d - k) / Math.max(1, d - c);
+      dtw.fbank.push({ start: a, w });
+    }
+    dtw.buf = new Float32Array(N * 8); dtw.bufLen = 0;
+    dtw.floor = -50; dtw.inSeg = false; dtw.seg = []; dtw.pre = []; dtw.loud = 0; dtw.quiet = 0;
+  }
+  function fft() {
+    const N = dtw.frameLen, re = dtw.fftRe, im = dtw.fftIm, rev = dtw.rev;
+    for (let i = 0; i < N; i++) { const j = rev[i]; if (j > i) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; } }
+    for (let size = 2; size <= N; size <<= 1) {
+      const half = size >> 1, step = N / size;
+      for (let i = 0; i < N; i += size) {
+        for (let j = 0, k = 0; j < half; j++, k += step) {
+          const c = dtw.cosTab[k], sn = dtw.sinTab[k];
+          const a = i + j, b = a + half;
+          const tr = re[b] * c - im[b] * sn, ti = re[b] * sn + im[b] * c;
+          re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+        }
+      }
+    }
+  }
+  // one frame -> { e: energy dB, f: 12 MFCCs }
+  function frameFeatures(x, off) {
+    const N = dtw.frameLen, re = dtw.fftRe, im = dtw.fftIm;
+    let en = 0;
+    for (let i = 0; i < N; i++) { const v = x[off + i]; en += v * v; re[i] = v * dtw.hann[i]; im[i] = 0; }
+    const e = 10 * Math.log10(en / N + 1e-10);
+    fft();
+    const nbins = N / 2 + 1, pow = new Float32Array(nbins);
+    for (let i = 0; i < nbins; i++) pow[i] = re[i] * re[i] + im[i] * im[i];
+    const nb = dtw.fbank.length, logm = new Float32Array(nb);
+    for (let b = 0; b < nb; b++) {
+      const { start, w } = dtw.fbank[b];
+      let acc = 0;
+      for (let k = 0; k < w.length; k++) acc += w[k] * (pow[start + k] || 0);
+      logm[b] = Math.log(acc + 1e-8);
+    }
+    const f = new Array(12);
+    for (let c = 1; c <= 12; c++) { let acc = 0; for (let b = 0; b < nb; b++) acc += logm[b] * Math.cos((Math.PI * c * (b + 0.5)) / nb); f[c - 1] = acc * Math.sqrt(2 / nb); }
+    return { e, f };
+  }
+  // segment (array of frames) -> feature matrix with cepstral mean subtraction and deltas
+  function segFeatures(frames) {
+    const n = frames.length, mean = new Array(12).fill(0);
+    frames.forEach((fr) => fr.f.forEach((v, i) => { mean[i] += v / n; }));
+    const out = [];
+    for (let t = 0; t < n; t++) {
+      const cur = frames[t].f.map((v, i) => v - mean[i]);
+      const p = frames[Math.max(0, t - 2)].f, q = frames[Math.min(n - 1, t + 2)].f;
+      const del = cur.map((_, i) => (q[i] - p[i]) * 0.5);
+      out.push(cur.concat(del).map((v) => Math.round(v * 100) / 100));
+    }
+    return out;
+  }
+  function dtwDistance(a, b) {
+    const n = a.length, m = b.length, band = Math.max(8, Math.floor(Math.max(n, m) * 0.35));
+    const INF = 1e12;
+    let prev = new Float64Array(m + 1).fill(INF), cur = new Float64Array(m + 1);
+    prev[0] = 0;
+    for (let i = 1; i <= n; i++) {
+      cur.fill(INF);
+      const jlo = Math.max(1, i - band), jhi = Math.min(m, i + band);
+      for (let j = jlo; j <= jhi; j++) {
+        const va = a[i - 1], vb = b[j - 1];
+        let d = 0;
+        for (let k = 0; k < va.length; k++) { const x = va[k] - vb[k]; d += x * x; }
+        d = Math.sqrt(d);
+        cur[j] = d + Math.min(prev[j - 1], prev[j], cur[j - 1]);
+      }
+      const t = prev; prev = cur; cur = t;
+    }
+    return prev[m] / (n + m);
+  }
+  function classify(feat) {
+    const best = new Array(7).fill(Infinity);
+    for (const t of dtw.templates) { const d = dtwDistance(feat, t.f); if (d < best[t.deg]) best[t.deg] = d; }
+    let deg = -1, bd = Infinity, second = Infinity;
+    for (let d = 0; d < 7; d++) { if (best[d] < bd) { second = bd; bd = best[d]; deg = d; } else if (best[d] < second) second = best[d]; }
+    return { deg, dist: bd, margin: second / Math.max(1e-6, bd) };
+  }
+  function onSegment(frames) {
+    const feat = segFeatures(frames);
+    if (dtw.train) { trainCapture(feat, frames.length); return; }
+    if (!dtw.listening || state.locked || !dtw.templates.length) return;
+    const r = classify(feat);
+    dtw.notes.push(r.deg);
+    dtw.heard.push(`${SOLF[r.deg]}${r.margin < 1.15 ? '?' : ''}`);
+    $('dtw-heard').textContent = dtw.heard.join(' ');
+    dtwProgress();
+  }
+  function dtwProcess(input) {
+    const N = dtw.frameLen;
+    if (dtw.bufLen + input.length > dtw.buf.length) { const nb = new Float32Array(dtw.buf.length * 2); nb.set(dtw.buf.subarray(0, dtw.bufLen)); dtw.buf = nb; }
+    dtw.buf.set(input, dtw.bufLen); dtw.bufLen += input.length;
+    let off = 0;
+    while (dtw.bufLen - off >= N) {
+      const fr = frameFeatures(dtw.buf, off);
+      off += dtw.hop;
+      vad(fr);
+    }
+    dtw.buf.copyWithin(0, off, dtw.bufLen); dtw.bufLen -= off;
+  }
+  function vad(fr) {
+    const e = fr.e;
+    if (!dtw.inSeg) {
+      dtw.floor = Math.min(e, dtw.floor + 0.05);
+      dtw.pre.push(fr); if (dtw.pre.length > 4) dtw.pre.shift();
+      if (e > dtw.floor + 15) { dtw.loud++; if (dtw.loud >= 2) { dtw.inSeg = true; dtw.seg = dtw.pre.slice(); dtw.quiet = 0; } } else dtw.loud = 0;
+      return;
+    }
+    dtw.seg.push(fr);
+    if (e < dtw.floor + 8) dtw.quiet++; else dtw.quiet = 0;
+    if (dtw.quiet >= 9 || dtw.seg.length > 130) {
+      const seg = dtw.seg.slice(0, dtw.seg.length - Math.min(dtw.quiet, 6));
+      dtw.inSeg = false; dtw.seg = []; dtw.loud = 0; dtw.quiet = 0; dtw.pre = [];
+      if (seg.length >= 10) onSegment(seg);
+    }
+  }
+  async function dtwToggle() {
+    if (dtw.on) { dtwStop(); return; }
+    if (sing.want) singStop();
+    if (pt.on) ptStop();
+    const err = await micOpen();
+    if (err) { dtwStatus(err, true); return; }
+    dtwSetup();
+    dtw.templates = state.dtwTemplates || [];
+    dtw.proc = ctx.createScriptProcessor(2048, 1, 1);
+    dtw.proc.onaudioprocess = (ev) => { try { dtwProcess(ev.inputBuffer.getChannelData(0)); } catch (e) { /* ignore */ } };
+    dtw.sink = ctx.createGain(); dtw.sink.gain.value = 0;
+    mic.src.connect(dtw.proc); dtw.proc.connect(dtw.sink); dtw.sink.connect(ctx.destination);
+    dtw.on = true;
+    $('dtw-btn').classList.add('live'); $('dtw-label').textContent = '正在听 · 点击停止';
+    if (!dtw.templates.length) { dtwStatus('还没有录入读音，先点设置里的"录入我的读音"', true); }
+    if (summaryEl.classList.contains('show')) startGroup(); else beginDtwGroup();
+  }
+  function dtwStop() {
+    if (dtw.train) trainCancel(true);
+    dtw.on = false; dtw.listening = false;
+    clearTimeout(dtw.timer);
+    try { if (dtw.proc) { dtw.proc.disconnect(); dtw.proc.onaudioprocess = null; } if (dtw.sink) dtw.sink.disconnect(); } catch (e) { /* ignore */ }
+    dtw.proc = null; dtw.sink = null;
+    micClose();
+    $('dtw-btn').classList.remove('live'); $('dtw-label').textContent = '开始识别';
+    dtwStatus('已停止');
+  }
+  function dtwStatus(msg, err) { const el = $('dtw-tip'); el.textContent = msg; el.classList.toggle('err', !!err); }
+  function beginDtwGroup() {
+    clearTimeout(dtw.timer);
+    dtw.notes = []; dtw.heard = [];
+    $('dtw-heard').textContent = '…';
+    dtw.listening = dtw.on && !dtw.train;
+    if (dtw.on && dtw.templates.length) dtwStatus('念吧，一个一个来，音节之间稍微断开');
+    else if (dtw.on) dtwStatus('还没有录入读音，先点设置里的"录入我的读音"', true);
+    else dtwStatus('先在设置里"录入我的读音"，然后点"开始识别"');
+  }
+  function dtwMatch(item, deg) { return deg === item.deg; }
+  function dtwProgress() {
+    const N = state.group.length;
+    state.group.forEach((it, i) => { it.res = dtw.notes[i] !== undefined ? (dtwMatch(it, dtw.notes[i]) ? 'ok' : 'bad') : null; it.heard = dtw.notes[i]; });
+    state.idx = Math.min(dtw.notes.length, N - 1);
+    renderGroup();
+    clearTimeout(dtw.timer);
+    if (dtw.notes.length >= N) { finishDtw(); return; }
+    if (state.speechPause) dtw.timer = setTimeout(finishDtw, state.speechPause * 1000);
+  }
+  function finishDtw() {
+    if (state.locked || state.input !== 'dtw' || !dtw.listening) return;
+    clearTimeout(dtw.timer);
+    dtw.listening = false;
+    const total = performance.now() - state.startT;
+    state.group.forEach((it, i) => { it.res = dtw.notes[i] !== undefined && dtwMatch(it, dtw.notes[i]) ? 'ok' : 'bad'; it.heard = dtw.notes[i]; });
+    state.idx = state.group.length;
+    const ok = state.group.filter((it) => it.res === 'ok').length;
+    state.session.n += state.group.length; state.session.correct += ok; state.session.timeSum += total;
+    startClock();
+    renderGroup();
+    const dt = $('sum-detail');
+    dt.hidden = false;
+    dt.innerHTML = state.group.map((it, i) => {
+      const got = dtw.notes[i] !== undefined ? dtw.heard[i] : '没听到';
+      return `<tr class="${it.res}"><td class="d">${displayText(it)}</td><td>${SOLF[it.deg]}</td><td>→ ${got}</td><td class="c"></td></tr>`;
+    }).join('');
+    $('sum-heard').hidden = true;
+    finishGroup(total, state.group.length - ok);
+  }
+
+  // ---- training flow ----
+  function trainStart() {
+    if (!dtw.on) { dtwStatus('先点"开始识别"打开麦克风，再录入读音', true); return; }
+    clearTimeout(dtw.timer);
+    dtw.listening = false;
+    dtw.train = { deg: 0, take: 0, per: DTW_TAKES, done: [] };
+    $('train').classList.add('show');
+    trainPrompt();
+  }
+  function trainPrompt() {
+    const t = dtw.train; if (!t) return;
+    $('train-step').textContent = `录入我的读音 · ${SOLF[t.deg]} · 第 ${t.take + 1} / ${t.per} 遍`;
+    $('train-syl').innerHTML = `${SOLF[t.deg]}<b>${t.deg + 1}</b>`;
+    $('train-dots').innerHTML = Array.from({ length: 7 }, (_, i) => `<i class="${i < t.deg ? 'done' : i === t.deg ? 'cur' : ''}"></i>`).join('');
+    $('train-msg').textContent = '念一遍这个唱名';
+  }
+  function trainCapture(feat, nframes) {
+    const t = dtw.train; if (!t) return;
+    t.done.push({ deg: t.deg, f: feat });
+    $('train-msg').textContent = `记下（${(nframes * 0.01).toFixed(2)} 秒）`;
+    t.take++;
+    if (t.take >= t.per) { t.take = 0; t.deg++; }
+    if (t.deg >= 7) { setTimeout(trainFinish, 400); return; }
+    setTimeout(trainPrompt, 400);
+  }
+  function trainFinish() {
+    const t = dtw.train; if (!t) return;
+    state.dtwTemplates = t.done;
+    dtw.templates = t.done;
+    dtw.train = null;
+    save();
+    $('train').classList.remove('show');
+    syncSettings();
+    dtwStatus('读音录好了，之后按你的录音识别');
+    startGroup();
+  }
+  function trainCancel(silent) {
+    dtw.train = null;
+    $('train').classList.remove('show');
+    if (!silent) startGroup();
+  }
+  function trainBack() {
+    const t = dtw.train; if (!t) return;
+    // drop takes already recorded for the current syllable and start it over
+    t.done = t.done.filter((x) => x.deg !== t.deg);
+    t.take = 0;
+    trainPrompt();
+  }
+  function dtwProfileText() {
+    if (!state.dtwTemplates) return '未录入';
+    return `已录入 ${state.dtwTemplates.length} 条`;
   }
 
   // ---------- DOM ----------
@@ -1734,18 +2041,20 @@
     const cur = state.group[state.idx];
     const oral = state.input === 'oral';
     const singing = state.input === 'sing';
-    const speaking = state.input === 'speech';
+    const speaking = state.input === 'speech' || state.input === 'dtw';
     const review = oral && state.phase === 'review';
     groupEl.classList.toggle('review', review);
     groupEl.innerHTML = state.group.map((item, i) => {
       const cls = ['note'];
-      if (!oral && i === state.idx && !state.locked && !(singing && !sing.listening) && !(speaking && !speech.want)) cls.push('cur');
+      const speechIdle = state.input === 'speech' ? !speech.want : state.input === 'dtw' ? !dtw.listening : false;
+      if (!oral && i === state.idx && !state.locked && !(singing && !sing.listening) && !(speaking && speechIdle)) cls.push('cur');
       if (item.res === 'ok') cls.push('done', 'ok');
       if (item.res === 'bad') cls.push('done', 'bad');
       const txt = displayText(item);
       const isText = isReverse(item.type);
       let fix = '';
       if (singing && item.res === 'bad') fix = `<span class="fix">${item.heard != null ? heardLabel(item.heard) : '漏'}</span>`;
+      else if (state.input === 'dtw' && item.res === 'bad') fix = `<span class="fix">${item.heard !== undefined && item.heard !== null ? SOLF[item.heard] : '漏'}</span>`;
       else if (speaking && item.res === 'bad') fix = `<span class="fix">${item.heard ? tokenLabel(item.heard) : '漏'}</span>`;
       else if (!oral && item.res === 'bad') fix = `<span class="fix">${answerLabel(item.type, correctIndex(item))}</span>`;
       const lbl2 = oral ? `<span class="lbl2">${review ? oralLabel(item) : ''}</span>` : '';
@@ -1754,7 +2063,7 @@
       return `<div class="${cls.join(' ')}" data-i="${i}"><span class="dot up${up}"></span><span class="glyph${isText ? ' text' : ''}">${txt}</span><span class="dot dn${dn}"></span><span class="under"></span>${lbl2}${fix}</div>`;
     }).join('');
     if (speaking) {
-      const what = state.mode === 'letter' ? '音名' : state.mode === 'solf' ? '唱名' : state.mode === 'mix' ? '唱名或音名' : '数字';
+      const what = state.input === 'dtw' ? '唱名' : state.mode === 'letter' ? '音名' : state.mode === 'solf' ? '唱名' : state.mode === 'mix' ? '唱名或音名' : '数字';
       promptEl.innerHTML = `念出每个的<strong>${what}</strong>`;
       posEl.textContent = `${Math.min(state.group.filter((it) => it.res).length, state.len)} / ${state.len}`;
       return;
@@ -1842,8 +2151,13 @@
     $('sing').hidden = state.input !== 'sing';
     $('speech').hidden = state.input !== 'speech';
     $('speech-fields').hidden = state.input !== 'speech';
+    $('dtw').hidden = state.input !== 'dtw';
+    $('dtw-fields').hidden = state.input !== 'dtw';
     press('lang-seg', 'lang', state.lang);
     press('pause-seg', 'pause', state.speechPause);
+    press('pause-seg2', 'pause', state.speechPause);
+    const ds = $('dtw-status'); ds.textContent = dtwProfileText(); ds.classList.toggle('ok', !!state.dtwTemplates);
+    $('dtw-clear').hidden = !state.dtwTemplates;
     $('sing-fields').hidden = state.input !== 'sing';
     $('sing-fields2').hidden = state.input !== 'sing';
     $('sing-fields3').hidden = state.input !== 'sing';
@@ -1854,7 +2168,7 @@
     $('key-sel').value = String(state.key);
     $('sound-toggle').setAttribute('aria-pressed', String(state.sound));
     $('cfg-summary').textContent = [
-      ({ oral: '唱读', sing: '视唱', speech: '念唱名' })[state.input] || '点按', MODE_NAMES[state.mode], `1=${LETTERS[state.key]}`,
+      ({ oral: '唱读', sing: '视唱', speech: '念唱名', dtw: '自训练' })[state.input] || '点按', MODE_NAMES[state.mode], `1=${LETTERS[state.key]}`,
       `${state.len} 个`, DOTS_NAMES[state.dots],
     ].join(' · ');
   }
@@ -1874,6 +2188,7 @@
     state.startT = performance.now();
     if (state.input === 'sing') beginSingGroup();
     if (state.input === 'speech') beginSpeechGroup();
+    if (state.input === 'dtw') beginDtwGroup();
   }
 
   // ---- oral self-check ----
@@ -1972,7 +2287,7 @@
     $('sum-total').textContent = (total / 1000).toFixed(1) + 's';
     const w = $('sum-wrong'); w.textContent = wrong; w.className = wrong ? 'bad' : 'ok';
     $('sum-best-wrap').hidden = !record;
-    if (state.input !== 'sing' && state.input !== 'speech') { $('sum-heard').hidden = true; $('sum-detail').hidden = true; }
+    if (!['sing', 'speech', 'dtw'].includes(state.input)) { $('sum-heard').hidden = true; $('sum-detail').hidden = true; }
     summaryEl.classList.add('show');
     renderStats();
     state.locked = true;
@@ -2002,6 +2317,14 @@
   ptSeg('pt-tol-seg', 'pttol', (v) => { state.pt.tol = Number(v); });
   ptSeg('pt-oct-seg', 'ptoct', (v) => { state.pt.oct = Number(v); });
   $('speech-btn').addEventListener('click', speechToggle);
+  $('dtw-btn').addEventListener('click', dtwToggle);
+  $('dtw-done').addEventListener('click', () => { if (state.input === 'dtw' && dtw.listening) finishDtw(); });
+  $('dtw-skip').addEventListener('click', () => { if (!summaryEl.classList.contains('show')) startGroup(); });
+  $('dtw-train-btn').addEventListener('click', trainStart);
+  $('train-cancel').addEventListener('click', () => trainCancel(false));
+  $('train-back').addEventListener('click', trainBack);
+  $('dtw-clear').addEventListener('click', () => { state.dtwTemplates = null; dtw.templates = []; save(); syncSettings(); });
+  $('pause-seg2').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; state.speechPause = Number(b.dataset.pause); syncSettings(); save(); });
   $('speech-skip').addEventListener('click', () => { if (!summaryEl.classList.contains('show')) startGroup(); });
   $('speech-done').addEventListener('click', () => { if (state.input === 'speech' && !state.locked && speech.want) finishSpeech(speechTokens()); });
   $('pause-seg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; state.speechPause = Number(b.dataset.pause); syncSettings(); save(); });
@@ -2048,6 +2371,7 @@
   segHandler('input-seg', 'input', (v) => {
     state.input = v;
     if (v !== 'sing' && sing.want) singStop();
+    if (v !== 'dtw' && dtw.on) dtwStop();
     if (v !== 'speech' && speech.want) { speech.want = false; stopSpeechEngine(); speechLabel(false); }
   });
   segHandler('ref-seg', 'ref', (v) => { state.refOct = Number(v); });
@@ -2076,6 +2400,7 @@
       tickClock();
       clock.lastTick = null;
       if (sing.want) singStop();
+      if (dtw.on) dtwStop();
       if (pt.on) ptStop();
       if (speech.want && speech.active) stopSpeechEngine();
     } else {
