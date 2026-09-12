@@ -1251,13 +1251,13 @@
   // ---------- speech mode: spoken solfège / note names / digits ----------
   // Every spoken token becomes a candidate set: s = solfège degree, l = letter index, d = digit degree.
   const SOLF_WORDS = [
-    ['do', 'doh', 'doe', 'dough', 'dor', 'dou', 'duo', 'toe', 'though', 'dho'],
-    ['re', 'ray', 'rae', 'rei', 'rey', 'rui', 'lei', 'lai', 'ley', 'reh', 'ruai'],
-    ['mi', 'me', 'mee', 'mie', 'my', 'ni'],
-    ['fa', 'fah', 'far', 'pha', 'fan'],
-    ['sol', 'so', 'soh', 'sew', 'saw', 'soul', 'sole', 'sou', 'suo', 'sow', 'sal', 'shuo', 'shou'],
-    ['la', 'lah', 'law', 'laa', 'lar', 'na'],
-    ['si', 'ti', 'tea', 'tee', 'see', 'sea', 'sii', 'xi', 'cee', 'c', 'ci', 'qi', 'shi'],
+    ['do', 'doh', 'doe', 'dough', 'dor', 'dou', 'duo', 'toe', 'though', 'dho', 'door', 'dor', 'dole', 'dot', 'daw', 'doll', 'do\'s'],
+    ['re', 'ray', 'rae', 'rei', 'rey', 'rui', 'lei', 'lai', 'ley', 'reh', 'ruai', 'lie', 'lay', 'ly', 'rye', 'wray', 'ray\'s', 'lei\'s', 'lay\'s'],
+    ['mi', 'me', 'mee', 'mie', 'my', 'ni', 'mean', 'meet', 'knee', 'mia', 'mee\'s'],
+    ['fa', 'fah', 'far', 'pha', 'fan', 'fun', 'fa\'s', 'far\'s', 'fuh'],
+    ['sol', 'so', 'soh', 'sew', 'saw', 'soul', 'sole', 'sou', 'suo', 'sow', 'sal', 'shuo', 'shou', 'sword', 'swore', 'sue', 'show', 'sho', 'saul', 'sol\'s', 'so\'s'],
+    ['la', 'lah', 'law', 'laa', 'lar', 'na', 'lo', 'lol', 'lala', 'la\'s', 'nah'],
+    ['si', 'ti', 'tea', 'tee', 'see', 'sea', 'sii', 'xi', 'cee', 'c', 'ci', 'qi', 'shi', 'she', 'sheep', 'seat', 'sit', 'see\'s', 'tee\'s', 'tease', 'chi', 'zee'],
   ];
   // Chinese characters by pinyin syllable (generated from a full pinyin table, tone-insensitive).
   const SYL_CHARS = {
