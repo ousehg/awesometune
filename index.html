@@ -215,6 +215,13 @@
   .sing-tip { font-size: 12px; color: var(--muted); text-align: center; min-height: 1.5em; }
   .sing-tip.err { color: var(--bad); }
   .field.only-sing[hidden] { display: none; }
+  .field.only-speech[hidden] { display: none; }
+  .speech { display: flex; flex-direction: column; gap: 10px; }
+  .speech[hidden] { display: none; }
+  .heard { font-family: var(--mono-font); font-size: 13px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 8px; display: flex; gap: 8px; align-items: baseline; min-height: 1.6em; }
+  .heard .lbl { flex: none; font-family: var(--body-font); font-size: 12px; }
+  .heard .txt { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+  .heard .txt bdi { direction: ltr; unicode-bidi: isolate; }
   .answers[hidden] { display: none; }
   .ans {
     appearance: none; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
@@ -324,7 +331,15 @@
         <div class="seg" role="group" aria-labelledby="lbl-input" id="input-seg">
           <button type="button" data-input="tap" aria-pressed="true">点按 / 键盘</button>
           <button type="button" data-input="oral" aria-pressed="false">唱读自评</button>
+          <button type="button" data-input="speech" aria-pressed="false">念唱名</button>
           <button type="button" data-input="sing" aria-pressed="false">视唱识音</button>
+        </div>
+      </div>
+      <div class="field only-speech" id="speech-fields" hidden>
+        <span class="lbl" id="lbl-lang">识别语言</span>
+        <div class="seg" role="group" aria-labelledby="lbl-lang" id="lang-seg">
+          <button type="button" data-lang="zh-CN" aria-pressed="true">中文</button>
+          <button type="button" data-lang="en-US" aria-pressed="false">English</button>
         </div>
       </div>
       <div class="field only-sing" id="sing-fields" hidden>
@@ -420,6 +435,14 @@
       <button type="button" class="big-btn" id="oral-btn">念完了 <kbd>空格</kbd></button>
       <div class="tip" id="oral-tip">出声念出每个数字，念完立刻点上面的按钮</div>
     </div>
+    <div class="speech" id="speech" hidden>
+      <div class="sing-row">
+        <button type="button" class="big-btn" id="speech-btn"><span class="ring"></span><span id="speech-label">开始识别</span></button>
+        <button type="button" class="ghost" id="speech-skip">换一组</button>
+      </div>
+      <div class="heard"><span class="lbl">听到</span><span class="txt"><bdi id="heard">…</bdi></span></div>
+      <div class="sing-tip" id="speech-tip">点"开始识别"，允许麦克风，然后从左到右念出每个数字的唱名</div>
+    </div>
     <div class="sing" id="sing" hidden>
       <div class="sing-row">
         <button type="button" class="big-btn" id="sing-btn"><span class="ring"></span><span id="sing-label">开始视唱</span></button>
@@ -478,6 +501,7 @@
     </div>
     <p class="help">
       数字上方的点是高音点（高八度），下方的点是低音点（低八度）；音名唱名不变，发声时按实际八度播放。<br>
+      念唱名：点"开始识别"后从左到右念出唱名（或音名、数字），第几个念的就对第几个数字，念完这组自动判分，停顿一下也会判分。识别用手机自带的语音识别，中文会把 do re mi 听成"多来米"之类的同音字，都能匹配。需要 https 地址和麦克风。<br>
       视唱识音：点"开始视唱"后每组先播一个 do 作参考，接着把这组音依次唱出来（每个音之间稍微断开），app 检测音高并逐个判分。默认只比对音级，不分八度；选"严格八度"时高低音点也要唱准。"调高自动对齐"时不要求你的 do 和参考音一样高，只看音与音之间的关系，小结会显示你实际唱的 do 在哪。唱到全对或停顿 1.2 秒后判分。<br>
       我的音阶：点"录入我的音阶"，依次唱 do 到 si 各保持一秒。之后判分只看你唱的音离你自己录的哪个音最近，不再要求唱准标准音高。对照表里会列出你每个音相对标准音程的偏差（音分）。需要 https 地址和麦克风权限，claude.ai 的预览框里用不了。<br>
       唱读自评：看到一组数字就出声念，念完点"念完了"，答案会揭开；把自己念错的数字点一下标红，再点"下一组"。计时是从出题到念完的时间。<br>
@@ -512,6 +536,7 @@
     singShift: 0,
     profile: null,
     nextDelay: 'slow',
+    lang: 'zh-CN',
     phase: 'reading',
     oralTotal: 0,
     group: [],
@@ -539,6 +564,7 @@
       if (typeof s.refTone === 'boolean') state.refTone = s.refTone;
       if (typeof s.autoKey === 'boolean') state.autoKey = s.autoKey;
       if (['fast', 'slow', 'manual'].includes(s.nextDelay)) state.nextDelay = s.nextDelay;
+      if (s.lang === 'zh-CN' || s.lang === 'en-US') state.lang = s.lang;
       if (Array.isArray(s.profile) && s.profile.length === 7 && s.profile.every((x) => typeof x === 'number')) state.profile = s.profile;
     } catch (e) { /* storage unavailable */ }
   }
@@ -547,7 +573,7 @@
       localStorage.setItem(STORE, JSON.stringify({
         best: state.best, mode: state.mode, dots: state.dots,
         key: state.key, len: state.len, sound: state.sound, timbre: state.timbre, input: state.input,
-        refOct: state.refOct, strictOct: state.strictOct, refTone: state.refTone, autoKey: state.autoKey, profile: state.profile, nextDelay: state.nextDelay,
+        refOct: state.refOct, strictOct: state.strictOct, refTone: state.refTone, autoKey: state.autoKey, profile: state.profile, nextDelay: state.nextDelay, lang: state.lang,
       }));
     } catch (e) { /* ignore */ }
   }
@@ -1093,6 +1119,235 @@
     return '已录入 · do = ' + midiName(Math.round(state.profile[0]));
   }
 
+  // ---------- speech mode: spoken solfège / note names / digits ----------
+  // Every spoken token becomes a candidate set: s = solfège degree, l = letter index, d = digit degree.
+  const SOLF_WORDS = [
+    ['do', 'doh', 'doe', 'dough', 'dor', 'dou', 'duo', 'toe', 'though', 'dho'],
+    ['re', 'ray', 'rae', 'rei', 'rey', 'rui', 'lei', 'lai', 'ley', 'reh', 'ruai'],
+    ['mi', 'me', 'mee', 'mie', 'my', 'ni'],
+    ['fa', 'fah', 'far', 'pha', 'fan'],
+    ['sol', 'so', 'soh', 'sew', 'saw', 'soul', 'sole', 'sou', 'suo', 'sow', 'sal', 'shuo', 'shou'],
+    ['la', 'lah', 'law', 'laa', 'lar', 'na'],
+    ['si', 'ti', 'tea', 'tee', 'see', 'sea', 'sii', 'xi', 'cee', 'c', 'ci', 'qi', 'shi'],
+  ];
+  // Chinese characters grouped by the pinyin syllables a recogniser produces for each solfège name (tone-insensitive).
+  const SOLF_CHARS = [
+    '多朵躲夺剁堕舵惰跺哆垛驮咄掇裰踱哚都斗豆逗抖陡兜痘窦读蚪脱托拖妥拓驼鸵唾椭陀',
+    '来莱赖癞睐徕雷累类泪垒磊蕾擂肋镭儡瑞锐蕊睿芮热惹唻咧',
+    '米迷密蜜谜秘弥眯觅靡糜咪泌幂你尼泥呢腻拟逆匿妮倪',
+    '发法罚伐乏阀筏珐饭反翻烦范凡番返犯泛帆繁贩',
+    '所索锁缩梭唆嗦琐蓑莎嗍搜艘嗽叟嗖擞飕馊说硕烁朔手收首受守寿授瘦售兽扫嫂骚搔臊',
+    '拉啦辣蜡腊喇垃邋蓝兰懒烂览篮拦栏揽缆那哪拿纳呐娜钠',
+    '西系细洗戏希息夕吸习席喜溪熙嘻悉膝析稀锡牺媳袭惜嬉禧玺曦四思斯司死丝私寺似饲肆撕嘶七其奇气期起齐企器汽棋欺妻祈骑启岂次此词磁瓷慈刺辞赐是十时事使世市式室师试食识实石史始视势示适提题替体踢梯剃啼涕蹄',
+  ];
+  const LETTER_WORDS = [
+    ['c', 'see', 'sea', 'cee', 'si'], ['d', 'dee', 'de', 'di'], ['e', 'ee', 'yi'], ['f', 'ef', 'eff'],
+    ['g', 'gee', 'jee', 'ji', 'jay'], ['a', 'ay', 'eh', 'ei', 'ey'], ['b', 'bee', 'be', 'bi'],
+  ];
+  const LETTER_CHARS = ['西系细洗', '弟滴低地帝第递', '一衣伊亿意易依', '', '记几寄机基鸡吉季', '诶哎唉欸', '比币逼必闭鼻'];
+  const LETTER_PHRASES = [['艾弗', '爱夫', '爱抚', '艾夫', '诶抚', '哎付', '爱付', '爱福'], 3];
+  const DIGIT_WORDS = [['one'], ['two', 'to', 'too'], ['three'], ['four', 'for'], ['five'], ['six'], ['seven']];
+  const DIGIT_CHARS = ['1一壹', '2二贰两', '3三叁', '4四肆', '5五伍', '6六陆', '7七柒'];
+
+  const wordMap = new Map();
+  const charMap = new Map();
+  function addTo(map, key, field, val) {
+    const c = map.get(key) || { s: -1, l: -1, d: -1 };
+    if (c[field] < 0) c[field] = val;
+    map.set(key, c);
+  }
+  for (let i = 0; i < 7; i++) {
+    SOLF_WORDS[i].forEach((w) => addTo(wordMap, w, 's', i));
+    LETTER_WORDS[i].forEach((w) => addTo(wordMap, w, 'l', i));
+    DIGIT_WORDS[i].forEach((w) => addTo(wordMap, w, 'd', i));
+    Array.from(SOLF_CHARS[i]).forEach((ch) => addTo(charMap, ch, 's', i));
+    Array.from(LETTER_CHARS[i]).forEach((ch) => addTo(charMap, ch, 'l', i));
+    Array.from(DIGIT_CHARS[i]).forEach((ch) => addTo(charMap, ch, 'd', i));
+  }
+  const PHRASE_MARK = '\uE0F3';
+  charMap.set(PHRASE_MARK, { s: -1, l: LETTER_PHRASES[1], d: -1 });
+  const MAX_WORD = Math.max(...Array.from(wordMap.keys()).map((k) => k.length));
+  function segmentWord(word) {
+    const out = [];
+    let i = 0;
+    while (i < word.length) {
+      let hit = null;
+      for (let L = Math.min(MAX_WORD, word.length - i); L >= 1; L--) {
+        const piece = word.slice(i, i + L);
+        if (wordMap.has(piece)) { hit = piece; break; }
+      }
+      if (!hit) return null;
+      out.push(Object.assign({ raw: hit }, wordMap.get(hit)));
+      i += hit.length;
+    }
+    return out;
+  }
+  function parseTokens(text) {
+    let t = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    LETTER_PHRASES[0].forEach((ph) => { t = t.split(ph).join(PHRASE_MARK); });
+    const tokens = [];
+    const re = /[a-z]+|[0-9]|[^\sa-z0-9\p{P}\p{S}]/gu;
+    let m;
+    while ((m = re.exec(t)) !== null) {
+      const w = m[0];
+      if (/^[a-z]+$/.test(w)) {
+        if (wordMap.has(w)) tokens.push(Object.assign({ raw: w }, wordMap.get(w)));
+        else { const seg = segmentWord(w); if (seg) tokens.push(...seg); }
+      } else if (charMap.has(w)) {
+        tokens.push(Object.assign({ raw: w }, charMap.get(w)));
+      }
+    }
+    return tokens;
+  }
+  function tokenMatches(item, tok) {
+    if (isReverse(item.type)) return tok.d === item.deg;
+    const solfOk = tok.s === item.deg;
+    const letterOk = tok.l === (state.key + item.deg) % 7;
+    if (state.mode === 'mix') return solfOk || letterOk;
+    return item.type === 'solf' ? solfOk : letterOk;
+  }
+  function tokenLabel(tok) {
+    if (tok.s >= 0) return SOLF[tok.s];
+    if (tok.l >= 0) return LETTERS[tok.l];
+    if (tok.d >= 0) return String(tok.d + 1);
+    return tok.raw;
+  }
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const speech = {
+    rec: null, want: false, active: false,
+    results: [],        // mirror of the engine's result list: {text, isFinal}
+    carried: [],        // tokens from engine sessions that ended during this group
+    carriedText: '',
+    startIndex: 0,      // where this group starts in the current engine session
+    timer: null, restartTimer: null, lastText: '',
+  };
+  function speechStatus(msg, err) { const el = $('speech-tip'); el.textContent = msg; el.classList.toggle('err', !!err); }
+  function speechLabel(on) { $('speech-btn').classList.toggle('live', !!on); $('speech-label').textContent = on ? '正在听 · 点击停止' : '开始识别'; }
+  function bestAlternative(result) {
+    let best = '', bestN = -1;
+    for (let i = 0; i < result.length; i++) {
+      const txt = result[i].transcript || '';
+      const n = parseTokens(txt).length;
+      if (n > bestN) { bestN = n; best = txt; }
+    }
+    return best;
+  }
+  function newRecognizer() {
+    const r = new SR();
+    r.lang = state.lang;
+    r.continuous = true;
+    r.interimResults = true;
+    r.maxAlternatives = 5;
+    r.onstart = () => { speech.active = true; speechLabel(true); if (!speechTokens().length) { state.startT = performance.now(); speechStatus('正在听…从左到右念'); } };
+    r.onresult = (ev) => {
+      const list = [];
+      for (let i = 0; i < ev.results.length; i++) list.push({ text: bestAlternative(ev.results[i]), isFinal: ev.results[i].isFinal });
+      speech.results = list;
+      onSpeechResult();
+    };
+    r.onerror = (ev) => {
+      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+        speech.want = false; speechLabel(false);
+        speechStatus('没有麦克风或语音识别权限，请在 Safari 设置里允许后重试', true);
+      } else if (ev.error !== 'no-speech' && ev.error !== 'aborted' && ev.error !== 'network') {
+        speechStatus('识别出错：' + ev.error, true);
+      }
+    };
+    r.onend = () => {
+      speech.active = false;
+      if (!state.locked) {
+        const finals = speech.results.slice(speech.startIndex).filter((x) => x.isFinal).map((x) => x.text);
+        if (finals.length) { speech.carried = speech.carried.concat(parseTokens(finals.join(' '))); speech.carriedText += finals.join(' ') + ' '; }
+      }
+      speech.results = []; speech.startIndex = 0;
+      if (speech.want) { clearTimeout(speech.restartTimer); speech.restartTimer = setTimeout(startSpeechEngine, 150); }
+      else speechLabel(false);
+    };
+    return r;
+  }
+  function startSpeechEngine() {
+    if (!speech.want) return;
+    if (!speech.rec) speech.rec = newRecognizer();
+    speech.rec.lang = state.lang;
+    try { speech.rec.start(); } catch (e) {
+      clearTimeout(speech.restartTimer);
+      speech.restartTimer = setTimeout(() => { if (speech.want && !speech.active) startSpeechEngine(); }, 400);
+    }
+  }
+  function stopSpeechEngine() { try { if (speech.rec) speech.rec.abort(); } catch (e) { /* ignore */ } }
+  function speechToggle() {
+    if (!SR) { speechStatus('这个浏览器不支持语音识别，请用 iPhone 的 Safari 通过 https 打开', true); return; }
+    speech.want = !speech.want;
+    if (speech.want) {
+      unlockAudio();
+      speech.carried = []; speech.carriedText = ''; speech.startIndex = 0; speech.results = [];
+      startSpeechEngine();
+      speechLabel(true);
+      if (summaryEl.classList.contains('show')) startGroup(); else state.startT = performance.now();
+    } else {
+      stopSpeechEngine();
+      speechLabel(false);
+      speechStatus('已停止');
+    }
+  }
+  function speechTokens() {
+    const parts = speech.results.slice(speech.startIndex).map((x) => x.text);
+    return speech.carried.concat(parseTokens(parts.join(' ')));
+  }
+  function beginSpeechGroup() {
+    clearTimeout(speech.timer);
+    speech.carried = []; speech.carriedText = '';
+    speech.startIndex = speech.results.length;
+    speech.lastText = '';
+    $('heard').textContent = '…';
+    if (speech.want) speechStatus(speech.active ? '正在听…从左到右念' : '正在连接麦克风…');
+    else speechStatus('点"开始识别"，允许麦克风，然后从左到右念出每个数字的唱名');
+  }
+  function onSpeechResult() {
+    if (state.input !== 'speech' || state.locked) return;
+    const tokens = speechTokens();
+    const segs = speech.results.slice(speech.startIndex);
+    speech.lastText = (speech.carriedText + segs.map((x) => x.text).join(' ')).trim();
+    $('heard').textContent = speech.lastText || '…';
+    const N = state.group.length;
+    state.group.forEach((it, i) => { it.res = tokens[i] ? (tokenMatches(it, tokens[i]) ? 'ok' : 'bad') : null; it.heard = tokens[i] || null; });
+    state.idx = Math.min(tokens.length, N - 1);
+    renderGroup();
+    clearTimeout(speech.timer);
+    if (!tokens.length) return;
+    const settled = !segs.length || segs[segs.length - 1].isFinal;   // nothing still being transcribed
+    if (tokens.length >= N && settled) { finishSpeech(tokens); return; }
+    speech.timer = setTimeout(() => finishSpeech(speechTokens()), tokens.length >= N ? 900 : settled ? 1000 : 2000);
+  }
+  function finishSpeech(tokens) {
+    if (state.locked || state.input !== 'speech') return;
+    clearTimeout(speech.timer);
+    const total = performance.now() - state.startT;
+    state.group.forEach((it, i) => { it.res = tokens[i] && tokenMatches(it, tokens[i]) ? 'ok' : 'bad'; it.heard = tokens[i] || null; });
+    state.idx = state.group.length;
+    const ok = state.group.filter((it) => it.res === 'ok').length;
+    state.session.n += state.group.length;
+    state.session.correct += ok;
+    state.session.timeSum += total;
+    startClock();
+    renderGroup();
+    const dt = $('sum-detail');
+    dt.hidden = false;
+    dt.innerHTML = state.group.map((it) => {
+      const want = answerLabel(it.type, correctIndex(it));
+      const got = it.heard ? `${it.heard.raw} → ${tokenLabel(it.heard)}` : '没听到';
+      return `<tr class="${it.res}"><td class="d">${displayText(it)}</td><td>${want}</td><td>${got}</td><td class="c"></td></tr>`;
+    }).join('');
+    const hs = $('sum-heard');
+    hs.hidden = !speech.lastText;
+    hs.textContent = speech.lastText ? '原文：' + speech.lastText : '';
+    // fresh engine session for the next group so leftovers don't carry over
+    if (speech.want && speech.active) stopSpeechEngine();
+    speech.carried = []; speech.carriedText = ''; speech.startIndex = 0;
+    finishGroup(total, state.group.length - ok);
+  }
+
   // ---------- DOM ----------
   const $ = (id) => document.getElementById(id);
   const groupEl = $('group');
@@ -1110,23 +1365,31 @@
     const cur = state.group[state.idx];
     const oral = state.input === 'oral';
     const singing = state.input === 'sing';
+    const speaking = state.input === 'speech';
     const review = oral && state.phase === 'review';
     groupEl.classList.toggle('review', review);
     groupEl.innerHTML = state.group.map((item, i) => {
       const cls = ['note'];
-      if (!oral && i === state.idx && !state.locked && !(singing && !sing.listening)) cls.push('cur');
+      if (!oral && i === state.idx && !state.locked && !(singing && !sing.listening) && !(speaking && !speech.want)) cls.push('cur');
       if (item.res === 'ok') cls.push('done', 'ok');
       if (item.res === 'bad') cls.push('done', 'bad');
       const txt = displayText(item);
       const isText = isReverse(item.type);
       let fix = '';
       if (singing && item.res === 'bad') fix = `<span class="fix">${item.heard != null ? heardLabel(item.heard) : '漏'}</span>`;
+      else if (speaking && item.res === 'bad') fix = `<span class="fix">${item.heard ? tokenLabel(item.heard) : '漏'}</span>`;
       else if (!oral && item.res === 'bad') fix = `<span class="fix">${answerLabel(item.type, correctIndex(item))}</span>`;
       const lbl2 = oral ? `<span class="lbl2">${review ? oralLabel(item) : ''}</span>` : '';
       const up = item.oct === 1 && !isText ? ' on' : '';
       const dn = item.oct === -1 && !isText ? ' on' : '';
       return `<div class="${cls.join(' ')}" data-i="${i}"><span class="dot up${up}"></span><span class="glyph${isText ? ' text' : ''}">${txt}</span><span class="dot dn${dn}"></span><span class="under"></span>${lbl2}${fix}</div>`;
     }).join('');
+    if (speaking) {
+      const what = state.mode === 'letter' ? '音名' : state.mode === 'solf' ? '唱名' : state.mode === 'mix' ? '唱名或音名' : '数字';
+      promptEl.innerHTML = `念出每个的<strong>${what}</strong>`;
+      posEl.textContent = `${Math.min(state.group.filter((it) => it.res).length, state.len)} / ${state.len}`;
+      return;
+    }
     if (singing) {
       promptEl.innerHTML = state.strictOct ? '把这组音<strong>唱出来</strong>（分八度）' : '把这组音<strong>唱出来</strong>';
       posEl.textContent = `${Math.min(sing.notes.length, state.len)} / ${state.len}`;
@@ -1208,6 +1471,9 @@
     answersEl.hidden = state.input !== 'tap';
     $('oral').hidden = state.input !== 'oral';
     $('sing').hidden = state.input !== 'sing';
+    $('speech').hidden = state.input !== 'speech';
+    $('speech-fields').hidden = state.input !== 'speech';
+    press('lang-seg', 'lang', state.lang);
     $('sing-fields').hidden = state.input !== 'sing';
     $('sing-fields2').hidden = state.input !== 'sing';
     $('sing-fields3').hidden = state.input !== 'sing';
@@ -1218,7 +1484,7 @@
     $('key-sel').value = String(state.key);
     $('sound-toggle').setAttribute('aria-pressed', String(state.sound));
     $('cfg-summary').textContent = [
-      state.input === 'oral' ? '唱读' : state.input === 'sing' ? '视唱' : '点按', MODE_NAMES[state.mode], `1=${LETTERS[state.key]}`,
+      ({ oral: '唱读', sing: '视唱', speech: '念唱名' })[state.input] || '点按', MODE_NAMES[state.mode], `1=${LETTERS[state.key]}`,
       `${state.len} 个`, DOTS_NAMES[state.dots],
     ].join(' · ');
   }
@@ -1237,6 +1503,7 @@
     renderOralButton();
     state.startT = performance.now();
     if (state.input === 'sing') beginSingGroup();
+    if (state.input === 'speech') beginSpeechGroup();
   }
 
   // ---- oral self-check ----
@@ -1335,7 +1602,7 @@
     $('sum-total').textContent = (total / 1000).toFixed(1) + 's';
     const w = $('sum-wrong'); w.textContent = wrong; w.className = wrong ? 'bad' : 'ok';
     $('sum-best-wrap').hidden = !record;
-    if (state.input !== 'sing') { $('sum-heard').hidden = true; $('sum-detail').hidden = true; }
+    if (state.input !== 'sing' && state.input !== 'speech') { $('sum-heard').hidden = true; $('sum-detail').hidden = true; }
     summaryEl.classList.add('show');
     renderStats();
     state.locked = true;
@@ -1352,6 +1619,9 @@
   $('next-btn').addEventListener('click', startGroup);
   $('oral-btn').addEventListener('click', oralAction);
   $('sing-btn').addEventListener('click', singToggle);
+  $('speech-btn').addEventListener('click', speechToggle);
+  $('speech-skip').addEventListener('click', () => { if (!summaryEl.classList.contains('show')) startGroup(); });
+  segHandler('lang-seg', 'lang', (v) => { state.lang = v; if (speech.want && speech.active) stopSpeechEngine(); });
   $('calib-btn').addEventListener('click', calibStart);
   $('calib-cancel').addEventListener('click', calibCancel);
   $('calib-back').addEventListener('click', calibBack);
@@ -1394,6 +1664,7 @@
   segHandler('input-seg', 'input', (v) => {
     state.input = v;
     if (v !== 'sing' && sing.want) singStop();
+    if (v !== 'speech' && speech.want) { speech.want = false; stopSpeechEngine(); speechLabel(false); }
   });
   segHandler('ref-seg', 'ref', (v) => { state.refOct = Number(v); });
   segHandler('strict-seg', 'strict', (v) => { state.strictOct = v === '1'; });
@@ -1421,7 +1692,9 @@
       tickClock();
       clock.lastTick = null;
       if (sing.want) singStop();
+      if (speech.want && speech.active) stopSpeechEngine();
     } else {
+      if (speech.want && !speech.active) startSpeechEngine();
       if (clock.started) clock.lastTick = performance.now();
       if (ctx && ctx.state !== 'running') { try { ctx.resume(); } catch (e) { /* ignore */ } }
     }
