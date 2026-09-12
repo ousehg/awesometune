@@ -249,6 +249,26 @@
   .summary .row b { color: var(--ink); font-weight: 500; }
   .summary .row b.bad { color: var(--bad); }
   .summary .row b.ok { color: var(--ok); }
+  .calib {
+    position: absolute; inset: 0; border-radius: 14px; background: var(--surface); z-index: 3;
+    display: none; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; padding: 20px;
+  }
+  .calib.show { display: flex; }
+  .calib .t { font-size: 12px; color: var(--muted); letter-spacing: .1em; }
+  .calib .syl { font-size: 40px; font-weight: 700; line-height: 1.1; }
+  .calib .syl b { font-family: var(--digit-font); font-weight: 600; color: var(--accent); margin-left: 10px; }
+  .calib .dots { display: flex; gap: 6px; margin: 4px 0; }
+  .calib .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+  .calib .dots i.done { background: var(--ok); }
+  .calib .dots i.cur { background: var(--accent); }
+  .calib .msg { font-size: 13px; color: var(--muted); min-height: 1.5em; }
+  .calib .row { display: flex; gap: 8px; margin-top: 6px; }
+  .calib .row button { appearance: none; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); border-radius: 999px; padding: 8px 16px; font: inherit; font-size: 14px; cursor: pointer; min-height: 40px; }
+  .calib .row button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .profile-status { font-size: 12px; color: var(--muted); }
+  .profile-status.ok { color: var(--ok); }
+  td.cents { font-family: var(--mono-font); font-size: 12px; }
+  td.cents small { color: var(--muted); }
   .summary .heardsum { font-family: var(--mono-font); font-size: 12px; color: var(--muted); max-width: 100%; overflow-wrap: anywhere; line-height: 1.5; }
   .summary .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
   .summary .hint kbd { font-family: var(--mono-font); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
@@ -307,6 +327,12 @@
           <button type="button" data-ref="0" aria-pressed="true">中（1=C4）</button>
         </div>
         <button type="button" class="toggle" id="reftone-toggle" aria-pressed="true">每组先播 do</button>
+      </div>
+      <div class="field only-sing" id="sing-fields3" hidden>
+        <span class="lbl">我的音阶</span>
+        <button type="button" class="toggle" id="calib-btn">录入我的音阶</button>
+        <span class="profile-status" id="profile-status">未录入，按标准音阶判分</span>
+        <button type="button" class="toggle" id="profile-clear" hidden>清除</button>
       </div>
       <div class="field only-sing" id="sing-fields2" hidden>
         <span class="lbl" id="lbl-strict">八度判定</span>
@@ -390,6 +416,16 @@
       </div>
       <div class="sing-tip" id="sing-tip">点"开始视唱"，允许麦克风；每组先给 do 的参考音，然后把这组音唱出来</div>
     </div>
+    <div class="calib" id="calib">
+      <div class="t" id="calib-step">录入我的音阶 · 1 / 7</div>
+      <div class="syl" id="calib-syl">do<b>1</b></div>
+      <div class="dots" id="calib-dots"></div>
+      <div class="msg" id="calib-msg">先听参考音，然后唱出这个音并保持一秒</div>
+      <div class="row">
+        <button type="button" id="calib-back">重录上一个</button>
+        <button type="button" id="calib-cancel">取消</button>
+      </div>
+    </div>
     <div class="summary" id="summary">
       <div class="t">本组完成</div>
       <div class="big" id="sum-avg">0.00<small>秒 / 音</small></div>
@@ -420,12 +456,14 @@
         <tbody>
           <tr id="ref-solf"><th>唱名</th></tr>
           <tr id="ref-letter"><th>音名</th></tr>
+          <tr id="ref-mine"><th>我的音阶</th></tr>
         </tbody>
       </table>
     </div>
     <p class="help">
       数字上方的点是高音点（高八度），下方的点是低音点（低八度）；音名唱名不变，发声时按实际八度播放。<br>
-      视唱识音：点"开始视唱"后每组先播一个 do 作参考，接着把这组音依次唱出来（每个音之间稍微断开），app 检测音高并逐个判分。默认只比对音级，不分八度；选"严格八度"时高低音点也要唱准。"调高自动对齐"时不要求你的 do 和参考音一样高，只看音与音之间的关系，小结会显示你实际唱的 do 在哪。唱到全对或停顿 1.2 秒后判分。需要 https 地址和麦克风权限，claude.ai 的预览框里用不了。<br>
+      视唱识音：点"开始视唱"后每组先播一个 do 作参考，接着把这组音依次唱出来（每个音之间稍微断开），app 检测音高并逐个判分。默认只比对音级，不分八度；选"严格八度"时高低音点也要唱准。"调高自动对齐"时不要求你的 do 和参考音一样高，只看音与音之间的关系，小结会显示你实际唱的 do 在哪。唱到全对或停顿 1.2 秒后判分。<br>
+      我的音阶：点"录入我的音阶"，依次唱 do 到 si 各保持一秒。之后判分只看你唱的音离你自己录的哪个音最近，不再要求唱准标准音高。对照表里会列出你每个音相对标准音程的偏差（音分）。需要 https 地址和麦克风权限，claude.ai 的预览框里用不了。<br>
       唱读自评：看到一组数字就出声念，念完点"念完了"，答案会揭开；把自己念错的数字点一下标红，再点"下一组"。计时是从出题到念完的时间。<br>
       键盘：答音名按 <kbd>C</kbd>–<kbd>B</kbd>；答唱名按 <kbd>D</kbd> <kbd>R</kbd> <kbd>M</kbd> <kbd>F</kbd> <kbd>S</kbd> <kbd>L</kbd> <kbd>X</kbd>（si）；答数字按 <kbd>1</kbd>–<kbd>7</kbd>。
       "最佳整组"只记录全对的一组。
@@ -456,6 +494,7 @@
     refTone: true,
     autoKey: true,
     singShift: 0,
+    profile: null,
     phase: 'reading',
     oralTotal: 0,
     group: [],
@@ -482,6 +521,7 @@
       if (typeof s.strictOct === 'boolean') state.strictOct = s.strictOct;
       if (typeof s.refTone === 'boolean') state.refTone = s.refTone;
       if (typeof s.autoKey === 'boolean') state.autoKey = s.autoKey;
+      if (Array.isArray(s.profile) && s.profile.length === 7 && s.profile.every((x) => typeof x === 'number')) state.profile = s.profile;
     } catch (e) { /* storage unavailable */ }
   }
   function save() {
@@ -489,7 +529,7 @@
       localStorage.setItem(STORE, JSON.stringify({
         best: state.best, mode: state.mode, dots: state.dots,
         key: state.key, len: state.len, sound: state.sound, timbre: state.timbre, input: state.input,
-        refOct: state.refOct, strictOct: state.strictOct, refTone: state.refTone, autoKey: state.autoKey,
+        refOct: state.refOct, strictOct: state.strictOct, refTone: state.refTone, autoKey: state.autoKey, profile: state.profile,
       }));
     } catch (e) { /* ignore */ }
   }
@@ -734,9 +774,11 @@
     stream: null, src: null, an: null, buf: null, timer: null,
     want: false, listening: false,
     notes: [],                       // committed notes for this group: midi (integer)
-    cand: null, candSince: 0, committed: false, lastVoiced: 0, lastNoteAt: 0,
+    cand: null, candSince: 0, committed: false, lastVoiced: 0, lastNoteAt: 0, samples: [],
     refTimer: null,
+    calib: null,                     // { deg, armed, buf: [{t, mf}], timer }
   };
+  function median(arr) { const a = arr.slice().sort((x, y) => x - y); const h = Math.floor(a.length / 2); return a.length % 2 ? a[h] : (a[h - 1] + a[h]) / 2; }
   function singStatus(msg, err) {
     const el = $('sing-tip');
     el.textContent = msg;
@@ -747,16 +789,36 @@
     $('sing-label').textContent = on ? '正在听 · 点击停止' : '开始视唱';
   }
   function expectedMidi(item) { return midiOf(state.key, item.deg, item.oct) + 12 * state.refOct; }
+  function wrap12(x) { return ((x % 12) + 18) % 12 - 6; }   // fold into the range -6 .. 6
+  const PROFILE_TOL = 0.9;   // semitones: how far from a calibrated pitch still counts as that degree
+  function nearestProfileDeg(y) {
+    const cal = state.profile;
+    let best = -1, bestD = 99;
+    for (let d = 0; d < 7; d++) {
+      const ad = Math.abs(wrap12(y - cal[d]));
+      if (ad < bestD) { bestD = ad; best = d; }
+    }
+    return bestD <= PROFILE_TOL ? best : -1;
+  }
   function matchWithShift(shift) {
-    return (item, midi) => {
+    if (state.profile) {
+      const cal = state.profile;
+      return (item, tok) => {
+        const y = tok.mf - shift;
+        if (nearestProfileDeg(y) !== item.deg) return false;
+        if (!state.strictOct) return true;
+        return Math.round((y - cal[item.deg]) / 12) === item.oct;
+      };
+    }
+    return (item, tok) => {
       const e = expectedMidi(item) + shift;
-      return state.strictOct ? midi === e : (((midi - e) % 12) + 12) % 12 === 0;
+      return state.strictOct ? tok.m === e : (((tok.m - e) % 12) + 12) % 12 === 0;
     };
   }
   // Pick the transposition (in semitones) under which the sung notes match best.
   function bestShift(items, notes) {
     if (!state.autoKey || !notes.length) return 0;
-    const range = state.strictOct ? [...Array(23).keys()].map((i) => i - 11) : [...Array(12).keys()];
+    const range = state.profile ? [0, 1, -1, 2, -2, 3, -3] : state.strictOct ? [...Array(23).keys()].map((i) => i - 11) : [...Array(12).keys()];
     let best = 0, bestOk = -1, bestDist = 99;
     for (const sh of range) {
       const r = alignSeq(items, notes, matchWithShift(sh));
@@ -768,6 +830,7 @@
   }
   function shiftText(sh) {
     if (!sh) return '';
+    if (state.profile) return `比录入时${sh > 0 ? '高' : '低'} ${Math.abs(sh)} 个半音`;
     const pc = ((SCALE[state.key] + sh) % 12 + 12) % 12;
     const up = ((sh % 12) + 12) % 12;
     const rel = up <= 6 ? `高 ${up}` : `低 ${12 - up}`;
@@ -805,6 +868,7 @@
     if (summaryEl.classList.contains('show')) startGroup(); else beginSingGroup();
   }
   function singStop() {
+    if (sing.calib) { clearTimeout(sing.calib.timer); sing.calib = null; $('calib').classList.remove('show'); }
     sing.want = false;
     sing.listening = false;
     clearInterval(sing.timer); sing.timer = null;
@@ -825,7 +889,7 @@
     sing.listening = false;
     if (!sing.want) { singStatus('点"开始视唱"，允许麦克风；每组先给 do 的参考音，然后把这组音唱出来'); return; }
     if (state.refTone) {
-      try { playSynth(freqOf(midiOf(state.key, 0, 0) + 12 * state.refOct), ctx.currentTime); } catch (e) { /* ignore */ }
+      try { playSynth(freqOf(state.profile ? state.profile[0] : midiOf(state.key, 0, 0) + 12 * state.refOct), ctx.currentTime); } catch (e) { /* ignore */ }
       singStatus('参考音 do …');
       sing.refTimer = setTimeout(() => { sing.listening = true; state.startT = performance.now(); singStatus('唱吧，每个音之间稍微断开'); }, 750);
     } else {
@@ -848,19 +912,23 @@
       needle.style.left = (50 + cents) + '%';
       needle.className = 'on' + (Math.abs(cents) <= 15 ? ' good' : '');
       sing.lastVoiced = now;
+      if (sing.calib) { calibVoiced(now, mf); return; }
       if (sing.listening && !state.locked) {
         if (sing.cand !== null && Math.abs(mf - sing.cand) < 0.7) {
+          sing.samples.push(mf);
           if (!sing.committed && now - sing.candSince >= 110) {
             sing.committed = true;
-            sing.notes.push(sing.cand);
+            const mfm = median(sing.samples);
+            sing.notes.push({ mf: mfm, m: Math.round(mfm) });
             sing.lastNoteAt = now;
             singProgress();
           }
         } else {
-          sing.cand = m; sing.candSince = now; sing.committed = false;
+          sing.cand = m; sing.candSince = now; sing.committed = false; sing.samples = [mf];
         }
       }
     } else {
+      if (sing.calib) { calibSilent(now); return; }
       if (now - sing.lastVoiced > 80) { sing.cand = null; sing.committed = false; needle.className = ''; }
       if (sing.listening && !state.locked && sing.notes.length && now - sing.lastVoiced > 1200) finishSing();
     }
@@ -920,8 +988,89 @@
     singStatus(ok === state.group.length ? '全对' : `错 ${state.group.length - ok} 个，红字是你唱到的音`);
     const hs = $('sum-heard');
     hs.hidden = false;
-    hs.textContent = '听到 ' + sing.notes.map(midiName).join(' ') + (shiftText(shift) ? ' · ' + shiftText(shift) : '');
+    hs.textContent = '听到 ' + sing.notes.map(heardLabel).join(' ') + (shiftText(shift) ? ' · ' + shiftText(shift) : '');
     finishGroup(total, state.group.length - ok);
+  }
+
+  function heardLabel(tok) {
+    if (state.profile) {
+      const d = nearestProfileDeg(tok.mf - state.singShift);
+      return d >= 0 ? SOLF[d] : midiName(tok.m);
+    }
+    return midiName(tok.m);
+  }
+
+  // ---------- calibration: record the user's own do…si ----------
+  function calibStart() {
+    if (!sing.want) { singStatus('先点"开始视唱"打开麦克风，再录入音阶', true); return; }
+    clearTimeout(sing.refTimer);
+    sing.listening = false;
+    sing.calib = { deg: 0, armed: false, buf: [], done: [], timer: null };
+    $('calib').classList.add('show');
+    calibPrompt();
+  }
+  function calibPrompt() {
+    const c = sing.calib;
+    if (!c) return;
+    $('calib-step').textContent = `录入我的音阶 · ${c.deg + 1} / 7`;
+    $('calib-syl').innerHTML = `${SOLF[c.deg]}<b>${c.deg + 1}</b>`;
+    $('calib-dots').innerHTML = Array.from({ length: 7 }, (_, i) => `<i class="${i < c.deg ? 'done' : i === c.deg ? 'cur' : ''}"></i>`).join('');
+    $('calib-msg').textContent = '先听参考音…';
+    c.armed = false; c.buf = [];
+    clearTimeout(c.timer);
+    try { playSynth(freqOf(midiOf(state.key, c.deg, 0) + 12 * state.refOct), ctx.currentTime); } catch (e) { /* ignore */ }
+    c.timer = setTimeout(() => { if (sing.calib === c) { c.armed = true; $('calib-msg').textContent = '唱出这个音，保持一秒'; } }, 800);
+  }
+  function calibVoiced(now, mf) {
+    const c = sing.calib;
+    if (!c.armed) return;
+    c.buf.push({ t: now, mf });
+    while (c.buf.length && now - c.buf[0].t > 450) c.buf.shift();
+    if (c.buf.length < 6) return;
+    const span = now - c.buf[0].t;
+    const vals = c.buf.map((x) => x.mf);
+    const spread = Math.max(...vals) - Math.min(...vals);
+    if (span >= 350 && spread < 1.0) {
+      const v = median(vals);
+      c.done[c.deg] = v;
+      c.armed = false; c.buf = [];
+      $('calib-msg').textContent = `记下 ${midiName(Math.round(v))}`;
+      $('calib-dots').children[c.deg].className = 'done';
+      c.timer = setTimeout(() => { if (sing.calib !== c) return; c.deg++; if (c.deg >= 7) calibFinish(); else calibPrompt(); }, 500);
+    }
+  }
+  function calibSilent(now) {
+    const c = sing.calib;
+    if (c.armed && c.buf.length && now - c.buf[c.buf.length - 1].t > 150) c.buf = [];
+  }
+  function calibFinish() {
+    const c = sing.calib;
+    state.profile = c.done.slice(0, 7);
+    sing.calib = null;
+    save();
+    $('calib').classList.remove('show');
+    renderRef();
+    syncSettings();
+    const asc = state.profile.every((v, i) => i === 0 || v > state.profile[i - 1]);
+    singStatus(asc ? '音阶录好了，之后按你的音阶判分' : '录好了，但有的音没有比前一个高，建议重录一遍', !asc);
+    startGroup();
+  }
+  function calibCancel() {
+    if (sing.calib) clearTimeout(sing.calib.timer);
+    sing.calib = null;
+    $('calib').classList.remove('show');
+    startGroup();
+  }
+  function calibBack() {
+    const c = sing.calib;
+    if (!c) return;
+    clearTimeout(c.timer);
+    if (c.deg > 0) c.deg--;
+    calibPrompt();
+  }
+  function profileText() {
+    if (!state.profile) return '未录入，按标准音阶判分';
+    return '已录入 · do = ' + midiName(Math.round(state.profile[0]));
   }
 
   // ---------- DOM ----------
@@ -951,7 +1100,7 @@
       const txt = displayText(item);
       const isText = isReverse(item.type);
       let fix = '';
-      if (singing && item.res === 'bad') fix = `<span class="fix">${item.heard != null ? midiName(item.heard) : '漏'}</span>`;
+      if (singing && item.res === 'bad') fix = `<span class="fix">${item.heard != null ? heardLabel(item.heard) : '漏'}</span>`;
       else if (!oral && item.res === 'bad') fix = `<span class="fix">${answerLabel(item.type, correctIndex(item))}</span>`;
       const lbl2 = oral ? `<span class="lbl2">${review ? oralLabel(item) : ''}</span>` : '';
       const up = item.oct === 1 && !isText ? ' on' : '';
@@ -1007,9 +1156,18 @@
     const letRow = $('ref-letter');
     solfRow.querySelectorAll('td').forEach((td) => td.remove());
     letRow.querySelectorAll('td').forEach((td) => td.remove());
+    const mineRow = $('ref-mine');
+    mineRow.querySelectorAll('td').forEach((td) => td.remove());
     for (let d = 0; d < 7; d++) {
       const a = document.createElement('td'); a.textContent = SOLF[d]; solfRow.appendChild(a);
       const b = document.createElement('td'); b.className = 'n'; b.textContent = noteName(state.key, d); letRow.appendChild(b);
+      const c = document.createElement('td'); c.className = 'cents';
+      if (state.profile) {
+        const ideal = state.profile[0] + SCALE[d];
+        const dev = Math.round((state.profile[d] - ideal) * 100);
+        c.innerHTML = midiName(Math.round(state.profile[d])) + (d ? `<br><small>${dev >= 0 ? '+' : ''}${dev}¢</small>` : '<br><small>基准</small>');
+      } else c.textContent = '—';
+      mineRow.appendChild(c);
     }
   }
 
@@ -1031,6 +1189,11 @@
     $('sing').hidden = state.input !== 'sing';
     $('sing-fields').hidden = state.input !== 'sing';
     $('sing-fields2').hidden = state.input !== 'sing';
+    $('sing-fields3').hidden = state.input !== 'sing';
+    const ps = $('profile-status');
+    ps.textContent = profileText();
+    ps.classList.toggle('ok', !!state.profile);
+    $('profile-clear').hidden = !state.profile;
     $('key-sel').value = String(state.key);
     $('sound-toggle').setAttribute('aria-pressed', String(state.sound));
     $('cfg-summary').textContent = [
@@ -1167,6 +1330,10 @@
   $('next-btn').addEventListener('click', startGroup);
   $('oral-btn').addEventListener('click', oralAction);
   $('sing-btn').addEventListener('click', singToggle);
+  $('calib-btn').addEventListener('click', calibStart);
+  $('calib-cancel').addEventListener('click', calibCancel);
+  $('calib-back').addEventListener('click', calibBack);
+  $('profile-clear').addEventListener('click', () => { state.profile = null; save(); renderRef(); syncSettings(); startGroup(); });
   $('sing-skip').addEventListener('click', () => { if (!summaryEl.classList.contains('show')) startGroup(); });
   groupEl.addEventListener('click', (e) => {
     const n = e.target.closest('.note');
