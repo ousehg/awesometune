@@ -269,6 +269,13 @@
   .profile-status.ok { color: var(--ok); }
   td.cents { font-family: var(--mono-font); font-size: 12px; }
   td.cents small { color: var(--muted); }
+  .summary .detail { border-collapse: collapse; font-family: var(--mono-font); font-size: 13px; margin: 2px 0; }
+  .summary .detail td { padding: 2px 8px; border: 0; text-align: left; white-space: nowrap; }
+  .summary .detail td.d { font-family: var(--digit-font); font-size: 18px; font-weight: 600; text-align: right; padding-right: 4px; }
+  .summary .detail tr.ok td { color: var(--ok); }
+  .summary .detail tr.bad td { color: var(--bad); }
+  .summary .detail td.c { color: var(--muted); }
+  .summary .detail[hidden] { display: none; }
   .summary .heardsum { font-family: var(--mono-font); font-size: 12px; color: var(--muted); max-width: 100%; overflow-wrap: anywhere; line-height: 1.5; }
   .summary .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
   .summary .hint kbd { font-family: var(--mono-font); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
@@ -383,6 +390,14 @@
         </div>
       </div>
       <div class="field">
+        <span class="lbl" id="lbl-next">下一组</span>
+        <div class="seg" role="group" aria-labelledby="lbl-next" id="next-seg">
+          <button type="button" data-next="fast" aria-pressed="false">快（2秒）</button>
+          <button type="button" data-next="slow" aria-pressed="true">慢（4秒）</button>
+          <button type="button" data-next="manual" aria-pressed="false">手动</button>
+        </div>
+      </div>
+      <div class="field">
         <span class="lbl" id="lbl-timbre">发声</span>
         <button type="button" class="toggle" id="sound-toggle" aria-pressed="false">开</button>
         <div class="seg" role="group" aria-labelledby="lbl-timbre" id="timbre-seg">
@@ -434,6 +449,7 @@
         <span>错误 <b id="sum-wrong">0</b></span>
         <span id="sum-best-wrap" hidden>新纪录 <b class="ok">★</b></span>
       </div>
+      <table class="detail" id="sum-detail" hidden></table>
       <div class="heardsum" id="sum-heard" hidden></div>
       <button type="button" class="next" id="next-btn">下一组</button>
       <div class="hint">按 <kbd>空格</kbd> 立即开始下一组</div>
@@ -495,6 +511,7 @@
     autoKey: true,
     singShift: 0,
     profile: null,
+    nextDelay: 'slow',
     phase: 'reading',
     oralTotal: 0,
     group: [],
@@ -521,6 +538,7 @@
       if (typeof s.strictOct === 'boolean') state.strictOct = s.strictOct;
       if (typeof s.refTone === 'boolean') state.refTone = s.refTone;
       if (typeof s.autoKey === 'boolean') state.autoKey = s.autoKey;
+      if (['fast', 'slow', 'manual'].includes(s.nextDelay)) state.nextDelay = s.nextDelay;
       if (Array.isArray(s.profile) && s.profile.length === 7 && s.profile.every((x) => typeof x === 'number')) state.profile = s.profile;
     } catch (e) { /* storage unavailable */ }
   }
@@ -529,7 +547,7 @@
       localStorage.setItem(STORE, JSON.stringify({
         best: state.best, mode: state.mode, dots: state.dots,
         key: state.key, len: state.len, sound: state.sound, timbre: state.timbre, input: state.input,
-        refOct: state.refOct, strictOct: state.strictOct, refTone: state.refTone, autoKey: state.autoKey, profile: state.profile,
+        refOct: state.refOct, strictOct: state.strictOct, refTone: state.refTone, autoKey: state.autoKey, profile: state.profile, nextDelay: state.nextDelay,
       }));
     } catch (e) { /* ignore */ }
   }
@@ -977,8 +995,20 @@
     renderGroup();
     singStatus(ok === state.group.length ? '全对' : `错 ${state.group.length - ok} 个，红字是你唱到的音`);
     const hs = $('sum-heard');
-    hs.hidden = false;
-    hs.textContent = '听到 ' + sing.notes.map(heardLabel).join(' ') + (shiftText(shift) ? ' · ' + shiftText(shift) : '');
+    hs.hidden = !shiftText(shift);
+    hs.textContent = shiftText(shift);
+    const dt = $('sum-detail');
+    dt.hidden = false;
+    dt.innerHTML = state.group.map((it, i) => {
+      const tok = sing.notes[i];
+      const want = isReverse(it.type) ? SOLF[it.deg] : SOLF[it.deg];
+      if (!tok) return `<tr class="bad"><td class="d">${it.deg + 1}</td><td>${want}</td><td>→ 没听到</td><td class="c"></td></tr>`;
+      const target = (state.profile ? state.profile[it.deg] + (state.strictOct ? 12 * it.oct : 0) : expectedMidi(it)) + shift;
+      const diff = state.strictOct ? tok.mf - target : wrap12(tok.mf - target);
+      const cents = Math.round(diff * 100);
+      const word = Math.abs(cents) > 60 ? (cents > 0 ? '偏高' : '偏低') : '';
+      return `<tr class="${it.res}"><td class="d">${it.deg + 1}</td><td>${want}</td><td>→ ${heardLabel(tok)}</td><td class="c">${cents >= 0 ? '+' : ''}${cents}¢ ${word}</td></tr>`;
+    }).join('');
     finishGroup(total, state.group.length - ok);
   }
 
@@ -1173,6 +1203,7 @@
     press('ref-seg', 'ref', state.refOct);
     press('strict-seg', 'strict', state.strictOct ? 1 : 0);
     press('auto-seg', 'auto', state.autoKey ? 1 : 0);
+    press('next-seg', 'next', state.nextDelay);
     $('reftone-toggle').setAttribute('aria-pressed', String(state.refTone));
     answersEl.hidden = state.input !== 'tap';
     $('oral').hidden = state.input !== 'oral';
@@ -1304,11 +1335,12 @@
     $('sum-total').textContent = (total / 1000).toFixed(1) + 's';
     const w = $('sum-wrong'); w.textContent = wrong; w.className = wrong ? 'bad' : 'ok';
     $('sum-best-wrap').hidden = !record;
-    if (state.input !== 'sing') $('sum-heard').hidden = true;
+    if (state.input !== 'sing') { $('sum-heard').hidden = true; $('sum-detail').hidden = true; }
     summaryEl.classList.add('show');
     renderStats();
     state.locked = true;
-    state.nextTimer = setTimeout(startGroup, 1800);
+    clearTimeout(state.nextTimer);
+    if (state.nextDelay !== 'manual') state.nextTimer = setTimeout(startGroup, state.nextDelay === 'fast' ? 1800 : 4000);
   }
 
   // ---------- events ----------
@@ -1366,6 +1398,7 @@
   segHandler('ref-seg', 'ref', (v) => { state.refOct = Number(v); });
   segHandler('strict-seg', 'strict', (v) => { state.strictOct = v === '1'; });
   segHandler('auto-seg', 'auto', (v) => { state.autoKey = v === '1'; });
+  $('next-seg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; state.nextDelay = b.dataset.next; syncSettings(); save(); });
   $('reftone-toggle').addEventListener('click', () => { state.refTone = !state.refTone; syncSettings(); save(); });
   segHandler('mode-seg', 'mode', (v) => { state.mode = v; });
   segHandler('dots-seg', 'dots', (v) => { state.dots = v; });
