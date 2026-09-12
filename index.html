@@ -249,6 +249,7 @@
   .summary .row b { color: var(--ink); font-weight: 500; }
   .summary .row b.bad { color: var(--bad); }
   .summary .row b.ok { color: var(--ok); }
+  .summary .heardsum { font-family: var(--mono-font); font-size: 12px; color: var(--muted); max-width: 100%; overflow-wrap: anywhere; line-height: 1.5; }
   .summary .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
   .summary .hint kbd { font-family: var(--mono-font); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
   .summary .next { appearance: none; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); border-radius: 999px; padding: 8px 18px; font: inherit; font-size: 14px; cursor: pointer; margin-top: 4px; min-height: 40px; }
@@ -312,6 +313,11 @@
         <div class="seg" role="group" aria-labelledby="lbl-strict" id="strict-seg">
           <button type="button" data-strict="0" aria-pressed="true">只看音级</button>
           <button type="button" data-strict="1" aria-pressed="false">严格八度</button>
+        </div>
+        <span class="lbl" id="lbl-auto" style="margin-left:6px">调高</span>
+        <div class="seg" role="group" aria-labelledby="lbl-auto" id="auto-seg">
+          <button type="button" data-auto="1" aria-pressed="true">自动对齐</button>
+          <button type="button" data-auto="0" aria-pressed="false">固定参考音</button>
         </div>
       </div>
       <div class="field">
@@ -392,6 +398,7 @@
         <span>错误 <b id="sum-wrong">0</b></span>
         <span id="sum-best-wrap" hidden>新纪录 <b class="ok">★</b></span>
       </div>
+      <div class="heardsum" id="sum-heard" hidden></div>
       <button type="button" class="next" id="next-btn">下一组</button>
       <div class="hint">按 <kbd>空格</kbd> 立即开始下一组</div>
     </div>
@@ -418,7 +425,7 @@
     </div>
     <p class="help">
       数字上方的点是高音点（高八度），下方的点是低音点（低八度）；音名唱名不变，发声时按实际八度播放。<br>
-      视唱识音：点"开始视唱"后每组先播一个 do 作参考，接着把这组音依次唱出来（每个音之间稍微断开），app 检测音高并逐个判分。默认只比对音级，不分八度；选"严格八度"时高低音点也要唱准。需要 https 地址和麦克风权限，claude.ai 的预览框里用不了。<br>
+      视唱识音：点"开始视唱"后每组先播一个 do 作参考，接着把这组音依次唱出来（每个音之间稍微断开），app 检测音高并逐个判分。默认只比对音级，不分八度；选"严格八度"时高低音点也要唱准。"调高自动对齐"时不要求你的 do 和参考音一样高，只看音与音之间的关系，小结会显示你实际唱的 do 在哪。唱到全对或停顿 1.2 秒后判分。需要 https 地址和麦克风权限，claude.ai 的预览框里用不了。<br>
       唱读自评：看到一组数字就出声念，念完点"念完了"，答案会揭开；把自己念错的数字点一下标红，再点"下一组"。计时是从出题到念完的时间。<br>
       键盘：答音名按 <kbd>C</kbd>–<kbd>B</kbd>；答唱名按 <kbd>D</kbd> <kbd>R</kbd> <kbd>M</kbd> <kbd>F</kbd> <kbd>S</kbd> <kbd>L</kbd> <kbd>X</kbd>（si）；答数字按 <kbd>1</kbd>–<kbd>7</kbd>。
       "最佳整组"只记录全对的一组。
@@ -447,6 +454,8 @@
     refOct: 0,
     strictOct: false,
     refTone: true,
+    autoKey: true,
+    singShift: 0,
     phase: 'reading',
     oralTotal: 0,
     group: [],
@@ -472,6 +481,7 @@
       if (typeof s.refOct === 'number') state.refOct = s.refOct;
       if (typeof s.strictOct === 'boolean') state.strictOct = s.strictOct;
       if (typeof s.refTone === 'boolean') state.refTone = s.refTone;
+      if (typeof s.autoKey === 'boolean') state.autoKey = s.autoKey;
     } catch (e) { /* storage unavailable */ }
   }
   function save() {
@@ -479,7 +489,7 @@
       localStorage.setItem(STORE, JSON.stringify({
         best: state.best, mode: state.mode, dots: state.dots,
         key: state.key, len: state.len, sound: state.sound, timbre: state.timbre, input: state.input,
-        refOct: state.refOct, strictOct: state.strictOct, refTone: state.refTone,
+        refOct: state.refOct, strictOct: state.strictOct, refTone: state.refTone, autoKey: state.autoKey,
       }));
     } catch (e) { /* ignore */ }
   }
@@ -538,6 +548,16 @@
   const SILENT_WAV = 'data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
   let ctx = null;
   let unlockEl = null;
+  const pluckCache = new Map();
+  function resetAudioContext() {
+    // iOS switches the hardware sample rate when the microphone opens or closes; a context created
+    // before that plays and analyses at the wrong rate, so rebuild it and drop cached buffers.
+    try { if (ctx) ctx.close(); } catch (e) { /* ignore */ }
+    ctx = null;
+    pluckCache.clear();
+    try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { ctx = null; }
+    if (ctx && ctx.state !== 'running') { try { ctx.resume(); } catch (e) { /* ignore */ } }
+  }
   function unlockAudio() {
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* ignore */ }
     try {
@@ -553,7 +573,6 @@
   function freqOf(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
 
   // Karplus-Strong plucked string: a burst of noise fed through a delay line with a gentle lowpass.
-  const pluckCache = new Map();
   function pluckBuffer(freq) {
     const key = Math.round(freq * 10);
     if (pluckCache.has(key)) return pluckCache.get(key);
@@ -684,7 +703,7 @@
     let rms = 0;
     for (let i = 0; i < n; i++) rms += buf[i] * buf[i];
     rms = Math.sqrt(rms / n);
-    if (rms < 0.012) return null;
+    if (rms < 0.006) return null;
     const minTau = Math.floor(sr / 1000), maxTau = Math.min(n - 2, Math.floor(sr / 65));
     const nsdf = new Float32Array(maxTau + 1);
     for (let tau = minTau; tau <= maxTau; tau++) {
@@ -728,9 +747,31 @@
     $('sing-label').textContent = on ? '正在听 · 点击停止' : '开始视唱';
   }
   function expectedMidi(item) { return midiOf(state.key, item.deg, item.oct) + 12 * state.refOct; }
-  function singMatch(item, midi) {
-    const e = expectedMidi(item);
-    return state.strictOct ? midi === e : (((midi - e) % 12) + 12) % 12 === 0;
+  function matchWithShift(shift) {
+    return (item, midi) => {
+      const e = expectedMidi(item) + shift;
+      return state.strictOct ? midi === e : (((midi - e) % 12) + 12) % 12 === 0;
+    };
+  }
+  // Pick the transposition (in semitones) under which the sung notes match best.
+  function bestShift(items, notes) {
+    if (!state.autoKey || !notes.length) return 0;
+    const range = state.strictOct ? [...Array(23).keys()].map((i) => i - 11) : [...Array(12).keys()];
+    let best = 0, bestOk = -1, bestDist = 99;
+    for (const sh of range) {
+      const r = alignSeq(items, notes, matchWithShift(sh));
+      const ok = r.marks.filter((m) => m === 'ok').length;
+      const dist = Math.min(Math.abs(sh), Math.abs(sh - 12), Math.abs(sh + 12));
+      if (ok > bestOk || (ok === bestOk && dist < bestDist)) { best = sh; bestOk = ok; bestDist = dist; }
+    }
+    return best;
+  }
+  function shiftText(sh) {
+    if (!sh) return '';
+    const pc = ((SCALE[state.key] + sh) % 12 + 12) % 12;
+    const up = ((sh % 12) + 12) % 12;
+    const rel = up <= 6 ? `高 ${up}` : `低 ${12 - up}`;
+    return `你的 do ≈ ${PC_NAMES[pc]}（比参考${rel} 个半音）`;
   }
   async function singToggle() {
     if (sing.want) { singStop(); return; }
@@ -748,7 +789,8 @@
       singStatus('没有麦克风权限。请在 Safari 的网站设置里允许麦克风后重试', true);
       return;
     }
-    if (ctx.state !== 'running') { try { await ctx.resume(); } catch (e) { /* ignore */ } }
+    resetAudioContext();
+    if (!ctx) { singStatus('音频不可用', true); return; }
     sing.stream = stream;
     sing.src = ctx.createMediaStreamSource(stream);
     sing.an = ctx.createAnalyser();
@@ -771,6 +813,7 @@
     try { if (sing.stream) sing.stream.getTracks().forEach((t) => t.stop()); } catch (e) { /* ignore */ }
     sing.stream = null; sing.src = null; sing.an = null;
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* ignore */ }
+    resetAudioContext();
     singLabel(false);
     $('sing-note').textContent = '—';
     $('sing-needle').className = '';
@@ -819,7 +862,7 @@
       }
     } else {
       if (now - sing.lastVoiced > 80) { sing.cand = null; sing.committed = false; needle.className = ''; }
-      if (sing.listening && !state.locked && sing.notes.length && now - sing.lastVoiced > 1400) finishSing();
+      if (sing.listening && !state.locked && sing.notes.length && now - sing.lastVoiced > 1200) finishSing();
     }
   }
   function alignSeq(items, tokens, matchFn) {
@@ -849,20 +892,23 @@
   }
   function singProgress() {
     const N = state.group.length;
-    const { marks, heard, consumed } = alignSeq(state.group, sing.notes, singMatch);
+    const shift = bestShift(state.group, sing.notes);
+    const { marks, heard, consumed } = alignSeq(state.group, sing.notes, matchWithShift(shift));
     state.group.forEach((it, i) => {
       it.res = (i < consumed && marks[i] !== 'miss') ? marks[i] : null;
       it.heard = heard[i];
     });
     state.idx = Math.min(consumed, N - 1);
     renderGroup();
-    if (sing.notes.length >= N) finishSing();
+    if (marks.every((m) => m === 'ok')) finishSing();
   }
   function finishSing() {
     if (state.locked || !sing.listening) return;
     sing.listening = false;
     const total = performance.now() - state.startT;
-    const { marks, heard } = alignSeq(state.group, sing.notes, singMatch);
+    const shift = bestShift(state.group, sing.notes);
+    state.singShift = shift;
+    const { marks, heard } = alignSeq(state.group, sing.notes, matchWithShift(shift));
     state.group.forEach((it, i) => { it.res = marks[i] === 'ok' ? 'ok' : 'bad'; it.heard = heard[i]; });
     state.idx = state.group.length;
     const ok = state.group.filter((it) => it.res === 'ok').length;
@@ -872,6 +918,9 @@
     startClock();
     renderGroup();
     singStatus(ok === state.group.length ? '全对' : `错 ${state.group.length - ok} 个，红字是你唱到的音`);
+    const hs = $('sum-heard');
+    hs.hidden = false;
+    hs.textContent = '听到 ' + sing.notes.map(midiName).join(' ') + (shiftText(shift) ? ' · ' + shiftText(shift) : '');
     finishGroup(total, state.group.length - ok);
   }
 
@@ -975,6 +1024,7 @@
     press('input-seg', 'input', state.input);
     press('ref-seg', 'ref', state.refOct);
     press('strict-seg', 'strict', state.strictOct ? 1 : 0);
+    press('auto-seg', 'auto', state.autoKey ? 1 : 0);
     $('reftone-toggle').setAttribute('aria-pressed', String(state.refTone));
     answersEl.hidden = state.input !== 'tap';
     $('oral').hidden = state.input !== 'oral';
@@ -1101,6 +1151,7 @@
     $('sum-total').textContent = (total / 1000).toFixed(1) + 's';
     const w = $('sum-wrong'); w.textContent = wrong; w.className = wrong ? 'bad' : 'ok';
     $('sum-best-wrap').hidden = !record;
+    if (state.input !== 'sing') $('sum-heard').hidden = true;
     summaryEl.classList.add('show');
     renderStats();
     state.locked = true;
@@ -1157,6 +1208,7 @@
   });
   segHandler('ref-seg', 'ref', (v) => { state.refOct = Number(v); });
   segHandler('strict-seg', 'strict', (v) => { state.strictOct = v === '1'; });
+  segHandler('auto-seg', 'auto', (v) => { state.autoKey = v === '1'; });
   $('reftone-toggle').addEventListener('click', () => { state.refTone = !state.refTone; syncSettings(); save(); });
   segHandler('mode-seg', 'mode', (v) => { state.mode = v; });
   segHandler('dots-seg', 'dots', (v) => { state.dots = v; });
