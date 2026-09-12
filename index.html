@@ -439,6 +439,13 @@
           <button type="button" data-lang="zh-CN" aria-pressed="true">中文</button>
           <button type="button" data-lang="en-US" aria-pressed="false">English</button>
         </div>
+        <span class="lbl" id="lbl-pause" style="margin-left:6px">停顿判分</span>
+        <div class="seg" role="group" aria-labelledby="lbl-pause" id="pause-seg">
+          <button type="button" data-pause="3" aria-pressed="false">3秒</button>
+          <button type="button" data-pause="5" aria-pressed="true">5秒</button>
+          <button type="button" data-pause="8" aria-pressed="false">8秒</button>
+          <button type="button" data-pause="0" aria-pressed="false">只手动</button>
+        </div>
       </div>
       <div class="field only-sing" id="sing-fields" hidden>
         <span class="lbl" id="lbl-ref">参考音</span>
@@ -536,6 +543,7 @@
     <div class="speech" id="speech" hidden>
       <div class="sing-row">
         <button type="button" class="big-btn" id="speech-btn"><span class="ring"></span><span id="speech-label">开始识别</span></button>
+        <button type="button" class="ghost" id="speech-done">念完了</button>
         <button type="button" class="ghost" id="speech-skip">换一组</button>
       </div>
       <div class="heard"><span class="lbl">听到</span><span class="txt"><bdi id="heard">…</bdi></span></div>
@@ -599,7 +607,7 @@
     </div>
     <p class="help">
       数字上方的点是高音点（高八度），下方的点是低音点（低八度）；音名唱名不变，发声时按实际八度播放。<br>
-      念唱名：点"开始识别"后从左到右念出唱名（或音名、数字），第几个念的就对第几个数字，念完这组自动判分，停顿一下也会判分。识别用手机自带的语音识别，中文会把 do re mi 听成"多来米"之类的同音字，都能匹配。需要 https 地址和麦克风。<br>
+      念唱名：点"开始识别"后从左到右念出唱名（或音名、数字），第几个念的就对第几个数字，念满一组自动判分；没念满时停顿超过设定秒数才判分，中间可以慢慢想，也可以点"念完了"立刻判分。识别用手机自带的语音识别，中文会把 do re mi 听成"多来米"之类的同音字，都能匹配。需要 https 地址和麦克风。<br>
       视唱识音：点"开始视唱"后每组先播一个 do 作参考，接着把这组音依次唱出来（每个音之间稍微断开），app 检测音高并逐个判分。默认只比对音级，不分八度；选"严格八度"时高低音点也要唱准。"调高自动对齐"时不要求你的 do 和参考音一样高，只看音与音之间的关系，小结会显示你实际唱的 do 在哪。唱到全对或停顿 1.2 秒后判分。<br>
       我的音阶：点"录入我的音阶"，依次唱 do 到 si 各保持一秒。之后判分只看你唱的音离你自己录的哪个音最近，不再要求唱准标准音高。对照表里会列出你每个音相对标准音程的偏差（音分）。需要 https 地址和麦克风权限，claude.ai 的预览框里用不了。<br>
       唱读自评：看到一组数字就出声念，念完点"念完了"，答案会揭开；把自己念错的数字点一下标红，再点"下一组"。计时是从出题到念完的时间。<br>
@@ -636,6 +644,7 @@
     profile: null,
     nextDelay: 'slow',
     lang: 'zh-CN',
+    speechPause: 5,
     tab: 'read',
     pt: { type: 'imitate', tol: 35, oct: 0 },
     phase: 'reading',
@@ -666,6 +675,7 @@
       if (typeof s.autoKey === 'boolean') state.autoKey = s.autoKey;
       if (['fast', 'slow', 'manual'].includes(s.nextDelay)) state.nextDelay = s.nextDelay;
       if (s.lang === 'zh-CN' || s.lang === 'en-US') state.lang = s.lang;
+      if ([0, 3, 5, 8].includes(s.speechPause)) state.speechPause = s.speechPause;
       if (s.tab === 'read' || s.tab === 'pitch') state.tab = s.tab;
       if (s.pt) {
         if (['imitate', 'interval', 'scale'].includes(s.pt.type)) state.pt.type = s.pt.type;
@@ -680,7 +690,7 @@
       localStorage.setItem(STORE, JSON.stringify({
         best: state.best, mode: state.mode, dots: state.dots,
         key: state.key, len: state.len, sound: state.sound, timbre: state.timbre, input: state.input,
-        refOct: state.refOct, strictOct: state.strictOct, refTone: state.refTone, autoKey: state.autoKey, profile: state.profile, nextDelay: state.nextDelay, lang: state.lang, tab: state.tab, pt: state.pt,
+        refOct: state.refOct, strictOct: state.strictOct, refTone: state.refTone, autoKey: state.autoKey, profile: state.profile, nextDelay: state.nextDelay, lang: state.lang, speechPause: state.speechPause, tab: state.tab, pt: state.pt,
       }));
     } catch (e) { /* ignore */ }
   }
@@ -1437,7 +1447,9 @@
     if (!tokens.length) return;
     const settled = !segs.length || segs[segs.length - 1].isFinal;   // nothing still being transcribed
     if (tokens.length >= N && settled) { finishSpeech(tokens); return; }
-    speech.timer = setTimeout(() => finishSpeech(speechTokens()), tokens.length >= N ? 900 : settled ? 1000 : 2000);
+    if (tokens.length >= N) { speech.timer = setTimeout(() => finishSpeech(speechTokens()), 900); return; }
+    if (!state.speechPause) return;                       // manual only: wait for 念完了
+    speech.timer = setTimeout(() => finishSpeech(speechTokens()), state.speechPause * 1000 + (settled ? 0 : 1000));
   }
   function finishSpeech(tokens) {
     if (state.locked || state.input !== 'speech') return;
@@ -1760,6 +1772,7 @@
     $('speech').hidden = state.input !== 'speech';
     $('speech-fields').hidden = state.input !== 'speech';
     press('lang-seg', 'lang', state.lang);
+    press('pause-seg', 'pause', state.speechPause);
     $('sing-fields').hidden = state.input !== 'sing';
     $('sing-fields2').hidden = state.input !== 'sing';
     $('sing-fields3').hidden = state.input !== 'sing';
@@ -1919,6 +1932,8 @@
   ptSeg('pt-oct-seg', 'ptoct', (v) => { state.pt.oct = Number(v); });
   $('speech-btn').addEventListener('click', speechToggle);
   $('speech-skip').addEventListener('click', () => { if (!summaryEl.classList.contains('show')) startGroup(); });
+  $('speech-done').addEventListener('click', () => { if (state.input === 'speech' && !state.locked && speech.want) finishSpeech(speechTokens()); });
+  $('pause-seg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; state.speechPause = Number(b.dataset.pause); syncSettings(); save(); });
   segHandler('lang-seg', 'lang', (v) => { state.lang = v; if (speech.want && speech.active) stopSpeechEngine(); });
   $('calib-btn').addEventListener('click', calibStart);
   $('calib-cancel').addEventListener('click', calibCancel);
