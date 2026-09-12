@@ -10,15 +10,15 @@
 
 ## 部署到 GitHub Pages
 
-1. 在 GitHub 新建一个仓库（例如 `jianpu`），不要勾选初始化 README。
+1. 在 GitHub 新建一个仓库（`awesometune`），不要勾选初始化 README。
 2. 在本目录执行：
 
    ```bash
-   git remote add origin git@github.com:<你的用户名>/jianpu.git
+   git remote add origin git@github.com:ousehg/awesometune.git
    git push -u origin main
    ```
 
 3. 打开仓库的 Settings → Pages，Source 选 "Deploy from a branch"，Branch 选 `main` / `/ (root)`，保存。
-4. 一两分钟后访问 `https://<你的用户名>.github.io/jianpu/`。
+4. 一两分钟后访问 `https://ousehg.github.io/awesometune/`。
 
 以后改了 `index.html`，`git commit` 再 `git push` 即可更新。
