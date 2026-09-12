@@ -774,10 +774,37 @@
     stream: null, src: null, an: null, buf: null, timer: null,
     want: false, listening: false,
     notes: [],                       // committed notes for this group: midi (integer)
-    cand: null, candSince: 0, committed: false, lastVoiced: 0, lastNoteAt: 0, samples: [],
+    cur: null, pending: null, lastVoiced: 0, lastNoteAt: 0,
     refTimer: null,
     calib: null,                     // { deg, armed, buf: [{t, mf}], timer }
   };
+  // A note is a pitch held for >= 130 ms. Once a note is running, a different pitch must itself
+  // hold for 130 ms before it counts as the next note, so vibrato, scoops and octave glitches don't split it.
+  function sameNote(a, b) { return state.strictOct ? Math.abs(a - b) < 0.9 : Math.abs(wrap12(a - b)) < 0.9; }
+  function trackNote(now, mf) {
+    const cur = sing.cur;
+    if (cur && sameNote(mf, cur.center)) {
+      if (!cur.committed) { cur.samples.push(mf); if (now - cur.start >= 130) commitNote(cur, now); }
+      sing.pending = null;
+      return;
+    }
+    const pd = sing.pending;
+    if (pd && sameNote(mf, pd.center)) {
+      pd.samples.push(mf);
+      if (now - pd.start >= 130) { sing.cur = pd; sing.pending = null; commitNote(pd, now); }
+    } else {
+      sing.pending = { center: mf, start: now, samples: [mf], committed: false };
+      if (!cur) { sing.cur = sing.pending; sing.pending = null; }
+    }
+  }
+  function commitNote(note, now) {
+    if (note.committed) return;
+    note.committed = true;
+    note.center = median(note.samples);
+    sing.notes.push({ mf: note.center, m: Math.round(note.center) });
+    sing.lastNoteAt = now;
+    singProgress();
+  }
   function median(arr) { const a = arr.slice().sort((x, y) => x - y); const h = Math.floor(a.length / 2); return a.length % 2 ? a[h] : (a[h - 1] + a[h]) / 2; }
   function singStatus(msg, err) {
     const el = $('sing-tip');
@@ -815,14 +842,17 @@
       return state.strictOct ? tok.m === e : (((tok.m - e) % 12) + 12) % 12 === 0;
     };
   }
+  function gradeSeq(items, notes, shift) {
+    const f = matchWithShift(shift);
+    return items.map((it, i) => (notes[i] ? (f(it, notes[i]) ? 'ok' : 'bad') : null));
+  }
   // Pick the transposition (in semitones) under which the sung notes match best.
   function bestShift(items, notes) {
     if (!state.autoKey || !notes.length) return 0;
     const range = state.profile ? [0, 1, -1, 2, -2, 3, -3] : state.strictOct ? [...Array(23).keys()].map((i) => i - 11) : [...Array(12).keys()];
     let best = 0, bestOk = -1, bestDist = 99;
     for (const sh of range) {
-      const r = alignSeq(items, notes, matchWithShift(sh));
-      const ok = r.marks.filter((m) => m === 'ok').length;
+      const ok = gradeSeq(items, notes, sh).filter((m) => m === 'ok').length;
       const dist = Math.min(Math.abs(sh), Math.abs(sh - 12), Math.abs(sh + 12));
       if (ok > bestOk || (ok === bestOk && dist < bestDist)) { best = sh; bestOk = ok; bestDist = dist; }
     }
@@ -885,7 +915,7 @@
   }
   function beginSingGroup() {
     clearTimeout(sing.refTimer);
-    sing.notes = []; sing.cand = null; sing.committed = false; sing.lastVoiced = 0; sing.lastNoteAt = 0;
+    sing.notes = []; sing.cur = null; sing.pending = null; sing.lastVoiced = 0; sing.lastNoteAt = 0;
     sing.listening = false;
     if (!sing.want) { singStatus('点"开始视唱"，允许麦克风；每组先给 do 的参考音，然后把这组音唱出来'); return; }
     if (state.refTone) {
@@ -913,23 +943,118 @@
       needle.className = 'on' + (Math.abs(cents) <= 15 ? ' good' : '');
       sing.lastVoiced = now;
       if (sing.calib) { calibVoiced(now, mf); return; }
-      if (sing.listening && !state.locked) {
-        if (sing.cand !== null && Math.abs(mf - sing.cand) < 0.7) {
-          sing.samples.push(mf);
-          if (!sing.committed && now - sing.candSince >= 110) {
-            sing.committed = true;
-            const mfm = median(sing.samples);
-            sing.notes.push({ mf: mfm, m: Math.round(mfm) });
-            sing.lastNoteAt = now;
-            singProgress();
-          }
-        } else {
-          sing.cand = m; sing.candSince = now; sing.committed = false; sing.samples = [mf];
-        }
-      }
+      if (sing.listening && !state.locked) trackNote(now, mf);
     } else {
       if (sing.calib) { calibSilent(now); return; }
-      if (now - sing.lastVoiced > 80) { sing.cand = null; sing.committed = false; needle.className = ''; }
+      if (now - sing.lastVoiced > 120) { sing.cur = null; sing.pending = null; needle.className = ''; }
+      if (sing.listening && !state.locked && sing.notes.length && now - sing.lastVoiced > 1200) finishSing();
+    }
+  }
+  function gradeSeq(items, notes, shift) {
+    const f = matchWithShift(shift);
+    return items.map((it, i) => (notes[i] ? (f(it, notes[i]) ? 'ok' : 'bad') : null));
+  }
+  // Pick the transposition (in semitones) under which the sung notes match best.
+  function bestShift(items, notes) {
+    if (!state.autoKey || !notes.length) return 0;
+    const range = state.profile ? [0, 1, -1, 2, -2, 3, -3] : state.strictOct ? [...Array(23).keys()].map((i) => i - 11) : [...Array(12).keys()];
+    let best = 0, bestOk = -1, bestDist = 99;
+    for (const sh of range) {
+      const ok = gradeSeq(items, notes, sh).filter((m) => m === 'ok').length;
+      const dist = Math.min(Math.abs(sh), Math.abs(sh - 12), Math.abs(sh + 12));
+      if (ok > bestOk || (ok === bestOk && dist < bestDist)) { best = sh; bestOk = ok; bestDist = dist; }
+    }
+    return best;
+  }
+  function shiftText(sh) {
+    if (!sh) return '';
+    if (state.profile) return `比录入时${sh > 0 ? '高' : '低'} ${Math.abs(sh)} 个半音`;
+    const pc = ((SCALE[state.key] + sh) % 12 + 12) % 12;
+    const up = ((sh % 12) + 12) % 12;
+    const rel = up <= 6 ? `高 ${up}` : `低 ${12 - up}`;
+    return `你的 do ≈ ${PC_NAMES[pc]}（比参考${rel} 个半音）`;
+  }
+  async function singToggle() {
+    if (sing.want) { singStop(); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      singStatus('这个浏览器拿不到麦克风。请用 Safari 通过 https 地址打开', true);
+      return;
+    }
+    unlockAudio();
+    if (!ctx) { singStatus('音频不可用', true); return; }
+    try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch (e) { /* ignore */ }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    } catch (e) {
+      singStatus('没有麦克风权限。请在 Safari 的网站设置里允许麦克风后重试', true);
+      return;
+    }
+    resetAudioContext();
+    if (!ctx) { singStatus('音频不可用', true); return; }
+    sing.stream = stream;
+    sing.src = ctx.createMediaStreamSource(stream);
+    sing.an = ctx.createAnalyser();
+    sing.an.fftSize = 2048;
+    sing.an.smoothingTimeConstant = 0;
+    sing.src.connect(sing.an);
+    sing.buf = new Float32Array(sing.an.fftSize);
+    sing.want = true;
+    singLabel(true);
+    clearInterval(sing.timer);
+    sing.timer = setInterval(singTick, 33);
+    if (summaryEl.classList.contains('show')) startGroup(); else beginSingGroup();
+  }
+  function singStop() {
+    if (sing.calib) { clearTimeout(sing.calib.timer); sing.calib = null; $('calib').classList.remove('show'); }
+    sing.want = false;
+    sing.listening = false;
+    clearInterval(sing.timer); sing.timer = null;
+    clearTimeout(sing.refTimer);
+    try { if (sing.src) sing.src.disconnect(); } catch (e) { /* ignore */ }
+    try { if (sing.stream) sing.stream.getTracks().forEach((t) => t.stop()); } catch (e) { /* ignore */ }
+    sing.stream = null; sing.src = null; sing.an = null;
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* ignore */ }
+    resetAudioContext();
+    singLabel(false);
+    $('sing-note').textContent = '—';
+    $('sing-needle').className = '';
+    singStatus('已停止');
+  }
+  function beginSingGroup() {
+    clearTimeout(sing.refTimer);
+    sing.notes = []; sing.cur = null; sing.pending = null; sing.lastVoiced = 0; sing.lastNoteAt = 0;
+    sing.listening = false;
+    if (!sing.want) { singStatus('点"开始视唱"，允许麦克风；每组先给 do 的参考音，然后把这组音唱出来'); return; }
+    if (state.refTone) {
+      try { playSynth(freqOf(state.profile ? state.profile[0] : midiOf(state.key, 0, 0) + 12 * state.refOct), ctx.currentTime); } catch (e) { /* ignore */ }
+      singStatus('参考音 do …');
+      sing.refTimer = setTimeout(() => { sing.listening = true; state.startT = performance.now(); singStatus('唱吧，每个音之间稍微断开'); }, 750);
+    } else {
+      sing.listening = true;
+      state.startT = performance.now();
+      singStatus('唱吧，每个音之间稍微断开');
+    }
+  }
+  function singTick() {
+    if (!sing.want || !sing.an) return;
+    sing.an.getFloatTimeDomainData(sing.buf);
+    const hz = detectPitch(sing.buf, ctx.sampleRate);
+    const now = performance.now();
+    const needle = $('sing-needle');
+    if (hz) {
+      const mf = 69 + 12 * Math.log2(hz / 440);
+      const m = Math.round(mf);
+      const cents = Math.round((mf - m) * 100);
+      $('sing-note').innerHTML = `${midiName(m)}<small>${solfOfMidi(m)} ${cents >= 0 ? '+' : ''}${cents}¢</small>`;
+      needle.style.left = (50 + cents) + '%';
+      needle.className = 'on' + (Math.abs(cents) <= 15 ? ' good' : '');
+      sing.lastVoiced = now;
+      if (sing.calib) { calibVoiced(now, mf); return; }
+      if (sing.listening && !state.locked) trackNote(now, mf);
+    } else {
+      if (sing.calib) { calibSilent(now); return; }
+      if (now - sing.lastVoiced > 120) { sing.cur = null; sing.pending = null; needle.className = ''; }
       if (sing.listening && !state.locked && sing.notes.length && now - sing.lastVoiced > 1200) finishSing();
     }
   }
@@ -961,14 +1086,12 @@
   function singProgress() {
     const N = state.group.length;
     const shift = bestShift(state.group, sing.notes);
-    const { marks, heard, consumed } = alignSeq(state.group, sing.notes, matchWithShift(shift));
-    state.group.forEach((it, i) => {
-      it.res = (i < consumed && marks[i] !== 'miss') ? marks[i] : null;
-      it.heard = heard[i];
-    });
-    state.idx = Math.min(consumed, N - 1);
+    state.singShift = shift;
+    const marks = gradeSeq(state.group, sing.notes, shift);
+    state.group.forEach((it, i) => { it.res = marks[i]; it.heard = sing.notes[i] || null; });
+    state.idx = Math.min(sing.notes.length, N - 1);
     renderGroup();
-    if (marks.every((m) => m === 'ok')) finishSing();
+    if (sing.notes.length >= N) finishSing();
   }
   function finishSing() {
     if (state.locked || !sing.listening) return;
@@ -976,8 +1099,8 @@
     const total = performance.now() - state.startT;
     const shift = bestShift(state.group, sing.notes);
     state.singShift = shift;
-    const { marks, heard } = alignSeq(state.group, sing.notes, matchWithShift(shift));
-    state.group.forEach((it, i) => { it.res = marks[i] === 'ok' ? 'ok' : 'bad'; it.heard = heard[i]; });
+    const marks = gradeSeq(state.group, sing.notes, shift);
+    state.group.forEach((it, i) => { it.res = marks[i] === 'ok' ? 'ok' : 'bad'; it.heard = sing.notes[i] || null; });
     state.idx = state.group.length;
     const ok = state.group.filter((it) => it.res === 'ok').length;
     state.session.n += state.group.length;
