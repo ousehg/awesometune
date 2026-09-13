@@ -569,7 +569,7 @@
         <button type="button" class="ghost" id="dtw-done">念完了</button>
         <button type="button" class="ghost" id="dtw-skip">换一组</button>
       </div>
-      <div class="heard"><span class="lbl">听到</span><span class="txt"><bdi id="dtw-heard">…</bdi></span></div>
+      <div class="heard"><span class="lbl">听到</span><span class="txt"><bdi id="dtw-heard">…</bdi></span><span class="lbl" id="dtw-level"></span></div>
       <div class="sing-tip" id="dtw-tip">先在设置里"录入我的读音"，然后点"开始识别"，一个一个念，音节之间稍微断开</div>
     </div>
     <div class="calib" id="train">
@@ -1757,7 +1757,7 @@
   const dtw = {
     on: false, proc: null, sink: null, sr: 48000, frameLen: 1024, hop: 480,
     buf: null, bufLen: 0, hann: null, fbank: null, fftRe: null, fftIm: null, cosTab: null, sinTab: null, rev: null,
-    floor: -50, inSeg: false, seg: [], pre: [], loud: 0, quiet: 0,
+    floor: -50, calib: [], inSeg: false, seg: [], pre: [], loud: 0, quiet: 0, tick: 0,
     notes: [], heard: [], timer: null, listening: false,
     train: null,   // { deg, take, per, done: [] }
     templates: [],
@@ -1789,7 +1789,7 @@
       dtw.fbank.push({ start: a, w });
     }
     dtw.buf = new Float32Array(N * 8); dtw.bufLen = 0;
-    dtw.floor = -50; dtw.inSeg = false; dtw.seg = []; dtw.pre = []; dtw.loud = 0; dtw.quiet = 0;
+    dtw.floor = -50; dtw.calib = []; dtw.inSeg = false; dtw.seg = []; dtw.pre = []; dtw.loud = 0; dtw.quiet = 0; dtw.tick = 0;
   }
   function fft() {
     const N = dtw.frameLen, re = dtw.fftRe, im = dtw.fftIm, rev = dtw.rev;
@@ -1887,20 +1887,31 @@
     }
     dtw.buf.copyWithin(0, off, dtw.bufLen); dtw.bufLen -= off;
   }
+  const ONSET_DB = 18, OFFSET_DB = 8, PEAK_DB = 22;
   function vad(fr) {
     const e = fr.e;
+    // first 0.6 s after opening the mic: measure the room, no detection
+    if (dtw.calib) {
+      dtw.calib.push(e);
+      if (dtw.calib.length >= 60) { dtw.floor = median(dtw.calib) + 2; dtw.calib = null; if (!dtw.train && dtw.templates.length) dtwStatus('念吧，一个一个来，音节之间稍微断开'); }
+      return;
+    }
+    if (++dtw.tick % 10 === 0) $('dtw-level').textContent = `电平 ${Math.round(e)} dB · 底噪 ${Math.round(dtw.floor)} dB`;
     if (!dtw.inSeg) {
-      dtw.floor = Math.min(e, dtw.floor + 0.05);
+      dtw.floor = e < dtw.floor ? dtw.floor + (e - dtw.floor) * 0.2 : dtw.floor + 0.15;   // falls fast, rises 15 dB/s
       dtw.pre.push(fr); if (dtw.pre.length > 4) dtw.pre.shift();
-      if (e > dtw.floor + 15) { dtw.loud++; if (dtw.loud >= 2) { dtw.inSeg = true; dtw.seg = dtw.pre.slice(); dtw.quiet = 0; } } else dtw.loud = 0;
+      if (e > dtw.floor + ONSET_DB) { dtw.loud++; if (dtw.loud >= 3) { dtw.inSeg = true; dtw.seg = dtw.pre.slice(); dtw.quiet = 0; dtw.peak = e; } } else dtw.loud = 0;
       return;
     }
     dtw.seg.push(fr);
-    if (e < dtw.floor + 8) dtw.quiet++; else dtw.quiet = 0;
-    if (dtw.quiet >= 9 || dtw.seg.length > 130) {
+    if (e > dtw.peak) dtw.peak = e;
+    if (e < dtw.floor + OFFSET_DB) dtw.quiet++; else dtw.quiet = 0;
+    if (dtw.quiet >= 9 || dtw.seg.length > 110) {
+      const tooLong = dtw.seg.length > 110;
       const seg = dtw.seg.slice(0, dtw.seg.length - Math.min(dtw.quiet, 6));
+      const strong = dtw.peak >= dtw.floor + PEAK_DB;
       dtw.inSeg = false; dtw.seg = []; dtw.loud = 0; dtw.quiet = 0; dtw.pre = [];
-      if (seg.length >= 10) onSegment(seg);
+      if (!tooLong && strong && seg.length >= 10) onSegment(seg);
     }
   }
   async function dtwToggle() {
@@ -1917,8 +1928,8 @@
     mic.src.connect(dtw.proc); dtw.proc.connect(dtw.sink); dtw.sink.connect(ctx.destination);
     dtw.on = true;
     $('dtw-btn').classList.add('live'); $('dtw-label').textContent = '正在听 · 点击停止';
-    if (!dtw.templates.length) { dtwStatus('还没有录入读音，先点设置里的"录入我的读音"', true); }
     if (summaryEl.classList.contains('show')) startGroup(); else beginDtwGroup();
+    dtwStatus('正在测底噪，先别出声…');
   }
   function dtwStop() {
     if (dtw.train) trainCancel(true);
