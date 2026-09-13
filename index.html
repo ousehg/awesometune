@@ -451,6 +451,7 @@
       <div class="field only-speech" id="dtw-fields" hidden>
         <span class="lbl">我的读音</span>
         <button type="button" class="toggle" id="dtw-train-btn">录入我的读音</button>
+        <button type="button" class="toggle" id="dtw-test-btn">测试补录</button>
         <span class="profile-status" id="dtw-status">未录入</span>
         <button type="button" class="toggle" id="dtw-clear" hidden>清除</button>
         <span class="lbl" id="lbl-pause2" style="margin-left:6px">停顿判分</span>
@@ -577,6 +578,7 @@
       <div class="syl" id="train-syl">do<b>1</b></div>
       <div class="dots" id="train-dots"></div>
       <div class="msg" id="train-msg">念一遍这个唱名</div>
+      <div class="msg" id="train-stat" hidden></div>
       <div class="row">
         <button type="button" id="train-back">重录这个</button>
         <button type="button" id="train-cancel">取消</button>
@@ -641,7 +643,7 @@
     <p class="help">
       数字上方的点是高音点（高八度），下方的点是低音点（低八度）；音名唱名不变，发声时按实际八度播放。<br>
       念唱名：点"开始识别"后从左到右念出唱名（或音名、数字），第几个念的就对第几个数字，最后一个音后面多念一个"完"字当缓冲（不参与判分），免得句尾被识别器吞掉；念满一组自动判分；没念满时停顿超过设定秒数才判分，中间可以慢慢想，也可以点"念完了"立刻判分。识别用手机自带的语音识别，中文会把 do re mi 听成"多来米"之类的同音字，都能匹配。需要 https 地址和麦克风。<br>
-      念唱名（自训练）：先"录入我的读音"，do 到 si 各念 4 遍；之后只认这七个音节、只认你的声音，用你自己的录音做模板比对（MFCC + DTW），不依赖手机的语音识别。念的时候每个音节之间稍微断开。<br>
+      念唱名（自训练）：先"录入我的读音"，do 到 si 各念 4 遍；之后只认这七个音节、只认你的声音，用你自己的录音做模板比对（MFCC + DTW），不依赖手机的语音识别。念的时候每个音节之间稍微断开。"测试补录"会随机出唱名让你念，显示识别结果并把这次录音加入模板，练几轮准确率会提高。<br>
       视唱识音：点"开始视唱"后每组先播一个 do 作参考，接着把这组音依次唱出来（每个音之间稍微断开），app 检测音高并逐个判分。默认只比对音级，不分八度；选"严格八度"时高低音点也要唱准。"调高自动对齐"时不要求你的 do 和参考音一样高，只看音与音之间的关系，小结会显示你实际唱的 do 在哪。唱到全对或停顿 1.2 秒后判分。<br>
       我的音阶：点"录入我的音阶"，依次唱 do 到 si 各保持一秒。之后判分只看你唱的音离你自己录的哪个音最近，不再要求唱准标准音高。对照表里会列出你每个音相对标准音程的偏差（音分）。需要 https 地址和麦克风权限，claude.ai 的预览框里用不了。<br>
       唱读自评：看到一组数字就出声念，念完点"念完了"，答案会揭开；把自己念错的数字点一下标红，再点"下一组"。计时是从出题到念完的时间。<br>
@@ -711,7 +713,7 @@
       if (['fast', 'slow', 'manual'].includes(s.nextDelay)) state.nextDelay = s.nextDelay;
       if (s.lang === 'zh-CN' || s.lang === 'en-US') state.lang = s.lang;
       if ([0, 3, 5, 8].includes(s.speechPause)) state.speechPause = s.speechPause;
-      if (Array.isArray(s.dtwTemplates) && s.dtwTemplates.length >= 7) state.dtwTemplates = s.dtwTemplates;
+      if (Array.isArray(s.dtwTemplates) && s.dtwTemplates.length >= 7 && s.dtwTemplates[0].f && s.dtwTemplates[0].f[0] && s.dtwTemplates[0].f[0].length === 26) state.dtwTemplates = s.dtwTemplates;
       if (s.tab === 'read' || s.tab === 'pitch') state.tab = s.tab;
       if (s.pt) {
         if (['imitate', 'interval', 'scale'].includes(s.pt.type)) state.pt.type = s.pt.type;
@@ -1760,9 +1762,9 @@
     floor: -50, calib: [], inSeg: false, seg: [], pre: [], loud: 0, quiet: 0, tick: 0,
     notes: [], heard: [], timer: null, listening: false,
     train: null,   // { deg, take, per, done: [] }
-    templates: [],
+    templates: [], scale: null,
   };
-  const DTW_TAKES = 4;
+  const DTW_TAKES = 4, MAX_PER_CLASS = 12;
   function dtwSetup() {
     dtw.sr = ctx.sampleRate;
     dtw.frameLen = 1024;
@@ -1827,17 +1829,34 @@
     return { e, f };
   }
   // segment (array of frames) -> feature matrix with cepstral mean subtraction and deltas
+  const FEAT_DIM = 26;   // 12 MFCC + 12 deltas + energy + energy delta
   function segFeatures(frames) {
     const n = frames.length, mean = new Array(12).fill(0);
     frames.forEach((fr) => fr.f.forEach((v, i) => { mean[i] += v / n; }));
+    const emax = Math.max(...frames.map((fr) => fr.e));
+    const en = frames.map((fr) => Math.max(-40, fr.e - emax) / 10);   // 0 at the loudest frame, down to -4
     const out = [];
     for (let t = 0; t < n; t++) {
       const cur = frames[t].f.map((v, i) => v - mean[i]);
       const p = frames[Math.max(0, t - 2)].f, q = frames[Math.min(n - 1, t + 2)].f;
       const del = cur.map((_, i) => (q[i] - p[i]) * 0.5);
-      out.push(cur.concat(del).map((v) => Math.round(v * 100) / 100));
+      const ed = (en[Math.min(n - 1, t + 2)] - en[Math.max(0, t - 2)]) * 0.5;
+      out.push(cur.concat(del, [en[t] * 3, ed * 3]).map((v) => Math.round(v * 100) / 100));
     }
     return out;
+  }
+  // per-dimension scale (1 / std over all template frames) so no dimension dominates the distance
+  function computeScale() {
+    const sum = new Array(FEAT_DIM).fill(0), sq = new Array(FEAT_DIM).fill(0);
+    let n = 0;
+    for (const t of dtw.templates) for (const v of t.f) { for (let k = 0; k < FEAT_DIM; k++) { sum[k] += v[k]; sq[k] += v[k] * v[k]; } n++; }
+    dtw.scale = new Array(FEAT_DIM).fill(1);
+    if (n < 2) return;
+    for (let k = 0; k < FEAT_DIM; k++) { const m = sum[k] / n, sd = Math.sqrt(Math.max(1e-6, sq[k] / n - m * m)); dtw.scale[k] = 1 / sd; }
+  }
+  function setTemplates(list) {
+    dtw.templates = (list || []).filter((t) => t.f && t.f[0] && t.f[0].length === FEAT_DIM);
+    computeScale();
   }
   function dtwDistance(a, b) {
     const n = a.length, m = b.length, band = Math.max(8, Math.floor(Math.max(n, m) * 0.35));
@@ -1848,9 +1867,9 @@
       cur.fill(INF);
       const jlo = Math.max(1, i - band), jhi = Math.min(m, i + band);
       for (let j = jlo; j <= jhi; j++) {
-        const va = a[i - 1], vb = b[j - 1];
+        const va = a[i - 1], vb = b[j - 1], sc = dtw.scale;
         let d = 0;
-        for (let k = 0; k < va.length; k++) { const x = va[k] - vb[k]; d += x * x; }
+        for (let k = 0; k < va.length; k++) { const x = (va[k] - vb[k]) * sc[k]; d += x * x; }
         d = Math.sqrt(d);
         cur[j] = d + Math.min(prev[j - 1], prev[j], cur[j - 1]);
       }
@@ -1859,14 +1878,16 @@
     return prev[m] / (n + m);
   }
   function classify(feat) {
-    const best = new Array(7).fill(Infinity);
-    for (const t of dtw.templates) { const d = dtwDistance(feat, t.f); if (d < best[t.deg]) best[t.deg] = d; }
+    const per = Array.from({ length: 7 }, () => []);
+    for (const t of dtw.templates) per[t.deg].push(dtwDistance(feat, t.f));
+    const best = per.map((ds) => { if (!ds.length) return Infinity; ds.sort((x, y) => x - y); return ds.length >= 3 ? (ds[0] + ds[1]) / 2 : ds[0]; });
     let deg = -1, bd = Infinity, second = Infinity;
     for (let d = 0; d < 7; d++) { if (best[d] < bd) { second = bd; bd = best[d]; deg = d; } else if (best[d] < second) second = best[d]; }
     return { deg, dist: bd, margin: second / Math.max(1e-6, bd) };
   }
   function onSegment(frames) {
     const feat = segFeatures(frames);
+    if (dtw.train && dtw.train.mode === 'test') { testCapture(feat); return; }
     if (dtw.train) { trainCapture(feat, frames.length); return; }
     if (!dtw.listening || state.locked || !dtw.templates.length) return;
     const r = classify(feat);
@@ -1921,7 +1942,8 @@
     const err = await micOpen();
     if (err) { dtwStatus(err, true); return; }
     dtwSetup();
-    dtw.templates = state.dtwTemplates || [];
+    setTemplates(state.dtwTemplates);
+    if (state.dtwTemplates && !dtw.templates.length) { state.dtwTemplates = null; save(); syncSettings(); }
     dtw.proc = ctx.createScriptProcessor(2048, 1, 1);
     dtw.proc.onaudioprocess = (ev) => { try { dtwProcess(ev.inputBuffer.getChannelData(0)); } catch (e) { /* ignore */ } };
     dtw.sink = ctx.createGain(); dtw.sink.gain.value = 0;
@@ -1987,9 +2009,53 @@
     if (!dtw.on) { dtwStatus('先点"开始识别"打开麦克风，再录入读音', true); return; }
     clearTimeout(dtw.timer);
     dtw.listening = false;
-    dtw.train = { deg: 0, take: 0, per: DTW_TAKES, done: [] };
+    dtw.train = { mode: 'record', deg: 0, take: 0, per: DTW_TAKES, done: [] };
+    $('train-stat').hidden = true;
+    $('train-back').textContent = '重录这个';
     $('train').classList.add('show');
     trainPrompt();
+  }
+  function testStart() {
+    if (!dtw.on) { dtwStatus('先点"开始识别"打开麦克风', true); return; }
+    if (!dtw.templates.length) { dtwStatus('先录入读音，再来测试补录', true); return; }
+    clearTimeout(dtw.timer);
+    dtw.listening = false;
+    dtw.train = { mode: 'test', deg: -1, n: 0, ok: 0, confuse: {}, busy: false };
+    $('train-stat').hidden = false;
+    $('train-back').textContent = '换一个';
+    $('train').classList.add('show');
+    testPrompt();
+  }
+  function testPrompt() {
+    const t = dtw.train; if (!t) return;
+    let d; do { d = Math.floor(Math.random() * 7); } while (d === t.deg);
+    t.deg = d; t.busy = false;
+    $('train-step').textContent = `测试补录 · 念这个`;
+    $('train-syl').innerHTML = `${SOLF[d]}<b>${d + 1}</b>`;
+    $('train-dots').innerHTML = '';
+    $('train-msg').textContent = '念一遍';
+    testStat();
+  }
+  function testStat() {
+    const t = dtw.train; if (!t) return;
+    const pairs = Object.entries(t.confuse).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} ×${v}`).join('，');
+    $('train-stat').textContent = `${t.n} 次 · 对 ${t.ok}` + (t.n ? ` · ${Math.round((t.ok / t.n) * 100)}%` : '') + (pairs ? ` · 混淆：${pairs}` : '') + ` · 模板 ${dtw.templates.length} 条`;
+  }
+  function testCapture(feat) {
+    const t = dtw.train; if (!t || t.busy) return;
+    t.busy = true;
+    const r = classify(feat);
+    const hit = r.deg === t.deg;
+    t.n++; if (hit) t.ok++; else { const k = `${SOLF[t.deg]}→${SOLF[r.deg]}`; t.confuse[k] = (t.confuse[k] || 0) + 1; }
+    $('train-msg').textContent = hit ? `识别为 ${SOLF[r.deg]} ✓ 已加入模板` : `识别为 ${SOLF[r.deg]} ✗（应为 ${SOLF[t.deg]}）已加入模板`;
+    // add this utterance as a template for the prompted syllable, keeping at most MAX_PER_CLASS per class (drop oldest)
+    const mine = dtw.templates.filter((x) => x.deg === t.deg);
+    if (mine.length >= MAX_PER_CLASS) { const idx = dtw.templates.indexOf(mine[0]); if (idx >= 0) dtw.templates.splice(idx, 1); }
+    dtw.templates.push({ deg: t.deg, f: feat });
+    computeScale();
+    state.dtwTemplates = dtw.templates; save(); syncSettings();
+    testStat();
+    setTimeout(() => { if (dtw.train && dtw.train.mode === 'test') testPrompt(); }, 900);
   }
   function trainPrompt() {
     const t = dtw.train; if (!t) return;
@@ -2010,7 +2076,7 @@
   function trainFinish() {
     const t = dtw.train; if (!t) return;
     state.dtwTemplates = t.done;
-    dtw.templates = t.done;
+    setTemplates(t.done);
     dtw.train = null;
     save();
     $('train').classList.remove('show');
@@ -2025,6 +2091,7 @@
   }
   function trainBack() {
     const t = dtw.train; if (!t) return;
+    if (t.mode === 'test') { testPrompt(); return; }
     // drop takes already recorded for the current syllable and start it over
     t.done = t.done.filter((x) => x.deg !== t.deg);
     t.take = 0;
@@ -2332,9 +2399,10 @@
   $('dtw-done').addEventListener('click', () => { if (state.input === 'dtw' && dtw.listening) finishDtw(); });
   $('dtw-skip').addEventListener('click', () => { if (!summaryEl.classList.contains('show')) startGroup(); });
   $('dtw-train-btn').addEventListener('click', trainStart);
+  $('dtw-test-btn').addEventListener('click', testStart);
   $('train-cancel').addEventListener('click', () => trainCancel(false));
   $('train-back').addEventListener('click', trainBack);
-  $('dtw-clear').addEventListener('click', () => { state.dtwTemplates = null; dtw.templates = []; save(); syncSettings(); });
+  $('dtw-clear').addEventListener('click', () => { state.dtwTemplates = null; setTemplates([]); save(); syncSettings(); });
   $('pause-seg2').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; state.speechPause = Number(b.dataset.pause); syncSettings(); save(); });
   $('speech-skip').addEventListener('click', () => { if (!summaryEl.classList.contains('show')) startGroup(); });
   $('speech-done').addEventListener('click', () => { if (state.input === 'speech' && !state.locked && speech.want) finishSpeech(speechTokens()); });
