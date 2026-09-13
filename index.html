@@ -1487,7 +1487,7 @@
       if (!vosk.model) {
         speechStatus('首次使用，正在下载离线模型（约 42 MB）…');
         const t0 = performance.now();
-        vosk.model = await window.Vosk.createModel(VOSK_MODEL);
+        vosk.model = await window.Vosk.createModel(new URL(VOSK_MODEL, location.href).href);   // absolute: the worker runs from a blob URL
         vosk.model.setLogLevel(-2);
         speechStatus(`模型就绪（${Math.round((performance.now() - t0) / 1000)} 秒）`);
       }
