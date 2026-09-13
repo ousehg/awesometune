@@ -246,6 +246,12 @@
   .sing-tip.err { color: var(--bad); }
   .field.only-sing[hidden] { display: none; }
   .field.only-speech[hidden] { display: none; }
+  .vu { position: relative; height: 10px; border-radius: 5px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+  .vu i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--muted); transition: width .05s linear; }
+  .vu i.hot { background: var(--ok); }
+  .vu b { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--bad); }
+  .vu-row { display: flex; align-items: center; gap: 10px; font-family: var(--mono-font); font-size: 11px; color: var(--muted); }
+  .vu-row .vu { flex: 1; }
   .speech { display: flex; flex-direction: column; gap: 10px; }
   .speech[hidden] { display: none; }
   .heard { font-family: var(--mono-font); font-size: 13px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 8px; display: flex; gap: 8px; align-items: baseline; min-height: 1.6em; }
@@ -570,7 +576,8 @@
         <button type="button" class="ghost" id="dtw-done">念完了</button>
         <button type="button" class="ghost" id="dtw-skip">换一组</button>
       </div>
-      <div class="heard"><span class="lbl">听到</span><span class="txt"><bdi id="dtw-heard">…</bdi></span><span class="lbl" id="dtw-level"></span></div>
+      <div class="heard"><span class="lbl">听到</span><span class="txt"><bdi id="dtw-heard">…</bdi></span></div>
+      <div class="vu-row"><span>电平</span><div class="vu"><i id="dtw-vu"></i><b id="dtw-vu-th"></b></div><span id="dtw-level">—</span></div>
       <div class="sing-tip" id="dtw-tip">先在设置里"录入我的读音"，然后点"开始识别"，一个一个念，音节之间稍微断开</div>
     </div>
     <div class="calib" id="train">
@@ -1908,18 +1915,30 @@
     }
     dtw.buf.copyWithin(0, off, dtw.bufLen); dtw.bufLen -= off;
   }
-  const ONSET_DB = 18, OFFSET_DB = 8, PEAK_DB = 22;
+  const ONSET_DB = 12, OFFSET_DB = 6, PEAK_DB = 15, VU_RANGE = 45;
   function vad(fr) {
     const e = fr.e;
     // first 0.6 s after opening the mic: measure the room, no detection
     if (dtw.calib) {
       dtw.calib.push(e);
-      if (dtw.calib.length >= 60) { dtw.floor = median(dtw.calib) + 2; dtw.calib = null; if (!dtw.train && dtw.templates.length) dtwStatus('念吧，一个一个来，音节之间稍微断开'); }
+      if (dtw.calib.length >= 60) {
+        const sorted = dtw.calib.slice().sort((x, y) => x - y);
+        dtw.floor = sorted[Math.floor(sorted.length * 0.2)] + 2;     // 20th percentile: ignores clicks and breaths
+        dtw.calib = null;
+        $('dtw-vu-th').style.left = (ONSET_DB / VU_RANGE) * 100 + '%';
+        if (!dtw.train && dtw.templates.length) dtwStatus('念吧，一个一个来，音节之间稍微断开');
+      }
       return;
     }
-    if (++dtw.tick % 10 === 0) $('dtw-level').textContent = `电平 ${Math.round(e)} dB · 底噪 ${Math.round(dtw.floor)} dB`;
+    if (++dtw.tick % 3 === 0) {
+      const rel = Math.max(0, Math.min(VU_RANGE, e - dtw.floor));
+      const vu = $('dtw-vu'); vu.style.width = (rel / VU_RANGE) * 100 + '%'; vu.className = rel >= ONSET_DB ? 'hot' : '';
+      if (dtw.tick % 9 === 0) $('dtw-level').textContent = `${Math.round(e)} / 底噪 ${Math.round(dtw.floor)} dB`;
+    }
     if (!dtw.inSeg) {
-      dtw.floor = e < dtw.floor ? dtw.floor + (e - dtw.floor) * 0.2 : dtw.floor + 0.15;   // falls fast, rises 15 dB/s
+      // learn the floor only from quiet frames: fall fast, rise slowly (3 dB/s)
+      if (e < dtw.floor) dtw.floor += (e - dtw.floor) * 0.2;
+      else if (e < dtw.floor + OFFSET_DB) dtw.floor += 0.03;
       dtw.pre.push(fr); if (dtw.pre.length > 4) dtw.pre.shift();
       if (e > dtw.floor + ONSET_DB) { dtw.loud++; if (dtw.loud >= 3) { dtw.inSeg = true; dtw.seg = dtw.pre.slice(); dtw.quiet = 0; dtw.peak = e; } } else dtw.loud = 0;
       return;
